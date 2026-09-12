@@ -1,0 +1,13 @@
+{
+  "name": "@relay/mobile-client",
+  "private": true,
+  "scripts": {
+    "setup": "flutter pub get",
+    "lint": "flutter analyze",
+    "format:check": "dart format --output=none --set-exit-if-changed lib test",
+    "test": "flutter test",
+    "start": "flutter run",
+    "start:web": "flutter run -d web-server --web-port 4300",
+    "build": "flutter build apk"
+  }
+}

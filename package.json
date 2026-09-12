@@ -1,0 +1,30 @@
+{
+  "name": "relay-workspace",
+  "private": true,
+  "packageManager": "pnpm@10.30.1",
+  "engines": {
+    "node": ">=24.15.0 <25",
+    "pnpm": ">=10 <11"
+  },
+  "scripts": {
+    "lint:api": "pnpm --dir apps/api lint",
+    "lint:web": "pnpm --dir apps/web-client lint",
+    "lint:mobile": "pnpm --dir apps/mobile-client lint",
+    "lint:orchestrator": "pnpm --dir apps/orchestrator lint",
+    "test:api": "pnpm --dir apps/api test",
+    "test:web": "pnpm --dir apps/web-client test --watch=false",
+    "test:mobile": "pnpm --dir apps/mobile-client test",
+    "test:orchestrator": "pnpm --dir apps/orchestrator test",
+    "start:api": "pnpm --dir apps/api start",
+    "start:web": "pnpm --dir apps/web-client start",
+    "start:mobile": "pnpm --dir apps/mobile-client start",
+    "start:mobile:web": "pnpm --dir apps/mobile-client start:web",
+    "start:orchestrator": "pnpm --dir apps/orchestrator start",
+    "start:temporal": "temporal server start-dev",
+    "build:api": "pnpm --dir apps/api build",
+    "build:web": "pnpm --dir apps/web-client build",
+    "build:mobile": "pnpm --dir apps/mobile-client build",
+    "setup:mobile": "pnpm --dir apps/mobile-client run setup",
+    "setup:orchestrator": "pnpm --dir apps/orchestrator run setup"
+  }
+}

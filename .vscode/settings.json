@@ -1,0 +1,20 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/apps/orchestrator/.venv",
+  "editor.formatOnSave": true,
+  "editor.formatOnSaveMode": "file",
+  "prettier.enable": true,
+  "prettier.configPath": "",
+  "eslint.workingDirectories": [{"mode": "auto"}],
+  "eslint.run": "onType",
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": true
+  },
+  "[javascript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": true
+  },
+  "[javascript][javascriptreact][typescript][typescriptreact][html][css][scss][less][json][jsonc][yaml][markdown]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  }
+}

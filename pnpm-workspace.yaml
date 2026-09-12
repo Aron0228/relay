@@ -1,0 +1,10 @@
+packages:
+  - apps/*
+
+# LoopBack's generated tests use Mocha globals from @loopback/build.
+publicHoistPattern:
+  - '@types/mocha'
+
+onlyBuiltDependencies:
+  - esbuild
+  - unrs-resolver

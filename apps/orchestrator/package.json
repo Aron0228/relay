@@ -1,0 +1,11 @@
+{
+  "name": "@relay/orchestrator",
+  "private": true,
+  "scripts": {
+    "setup": "uv sync --locked",
+    "lint": "uv run --locked ruff check .",
+    "format:check": "uv run --locked ruff format --check .",
+    "test": "uv run --locked python -m unittest discover -s tests -v",
+    "start": "uv run --locked python hello_activity.py"
+  }
+}
