@@ -1,0 +1,34 @@
+[project]
+name = "relay"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Aron0228", email = "aronreszegi2@gmail.com" }
+]
+requires-python = ">=3.10"
+dependencies = [
+    "temporalio>=1.32.0",
+]
+
+[project.scripts]
+relay = "relay:main"
+
+[build-system]
+requires = ["uv_build>=0.12.13,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.16.7",
+]
+
+[tool.ruff]
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+# Keep the official Temporal sample unchanged, including its logging syntax.
+"hello_activity.py" = ["UP031"]
