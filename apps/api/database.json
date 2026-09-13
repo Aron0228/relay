@@ -1,0 +1,9 @@
+{
+  "sql-file": "true",
+  "dev": {
+    "driver": "pg",
+    "url": {
+      "ENV": "POSTGRES_URL"
+    }
+  }
+}

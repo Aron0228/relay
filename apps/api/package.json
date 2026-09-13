@@ -40,19 +40,21 @@
     "@loopback/core": "^7.0.15",
     "@loopback/rest": "^15.0.16",
     "@loopback/rest-explorer": "^8.0.16",
+    "db-migrate": "^0.11.14",
+    "db-migrate-pg": "^1.5.2",
     "tslib": "^2.0.0"
   },
   "devDependencies": {
     "@loopback/build": "^12.0.15",
     "@loopback/eslint-config": "^16.0.1",
-    "eslint": "^8.57.1",
+    "@loopback/testlab": "^8.0.15",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^20.19.43",
     "@typescript-eslint/eslint-plugin": "^8.69.0",
     "@typescript-eslint/parser": "^8.69.0",
-    "@types/mocha": "^10.0.10",
+    "eslint": "^8.57.1",
     "rimraf": "^5.0.10",
     "source-map-support": "^0.5.21",
-    "@loopback/testlab": "^8.0.15",
-    "@types/node": "^20.19.43",
     "typescript": "~5.2.2"
   }
 }
