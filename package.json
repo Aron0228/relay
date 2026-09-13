@@ -1,0 +1,17 @@
+{
+  "name": "relay-monorepo",
+  "private": true,
+  "packageManager": "pnpm@10.30.1",
+  "scripts": {
+    "install:mobile": "pnpm --dir apps/mobile-client run install-deps",
+    "start:api": "pnpm --dir apps/api start",
+    "start:web": "pnpm --dir apps/web-client start",
+    "start:mobile": "pnpm --dir apps/mobile-client start",
+    "start:mobile:web": "pnpm --dir apps/mobile-client start:web",
+    "build:api": "pnpm --dir apps/api build",
+    "build:web": "pnpm --dir apps/web-client build",
+    "build:mobile": "pnpm --dir apps/mobile-client build",
+    "lint": "pnpm --dir apps/api lint && pnpm --dir apps/web-client lint && pnpm --dir apps/mobile-client lint",
+    "test": "pnpm --dir apps/api test && pnpm --dir apps/web-client test --watch=false && pnpm --dir apps/mobile-client test"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "relay",
+  "private": true,
+  "scripts": {
+    "lint": "flutter analyze",
+    "test": "flutter test",
+    "build": "flutter build apk",
+    "start": "flutter run",
+    "start:web": "flutter run -d web-server --web-port 4300",
+    "install-deps": "flutter pub get"
+  }
+}

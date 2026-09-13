@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    name: API
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: pnpm
+
+      - name: Install API dependencies
+        run: pnpm --filter ./apps/api install --frozen-lockfile
+
+      - name: Lint API
+        run: pnpm --dir apps/api run lint
+
+      - name: Test API
+        run: pnpm --dir apps/api run test
+
+      - name: Build API
+        run: pnpm run build:api
+
+  web:
+    name: Web client
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: pnpm
+
+      - name: Install web client dependencies
+        run: pnpm --filter ./apps/web-client install --frozen-lockfile
+
+      - name: Lint web client
+        run: pnpm --dir apps/web-client run lint
+
+      - name: Test web client
+        run: pnpm --dir apps/web-client run test --watch=false
+
+      - name: Build web client
+        run: pnpm run build:web
+
+  mobile:
+    name: Mobile client
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/mobile-client
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.4'
+          cache: true
+
+      - name: Install mobile client dependencies
+        run: flutter pub get
+
+      - name: Lint mobile client
+        run: flutter analyze
+
+      - name: Test mobile client
+        run: flutter test
+
+      - name: Build mobile client (Android APK)
+        run: flutter build apk
