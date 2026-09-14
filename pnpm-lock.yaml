@@ -16,6 +16,9 @@ importers:
       '@loopback/core':
         specifier: ^7.0.15
         version: 7.0.15
+      '@loopback/repository':
+        specifier: ^8.0.15
+        version: 8.0.15(@loopback/core@7.0.15)
       '@loopback/rest':
         specifier: ^15.0.16
         version: 15.0.16(@loopback/core@7.0.15)(@loopback/repository@8.0.15(@loopback/core@7.0.15))
@@ -28,6 +31,12 @@ importers:
       db-migrate-pg:
         specifier: ^1.5.2
         version: 1.5.2
+      dotenv:
+        specifier: ^17.4.2
+        version: 17.4.2
+      loopback-connector-postgresql:
+        specifier: ^9.0.2
+        version: 9.0.2
       tslib:
         specifier: ^2.0.0
         version: 2.8.1
@@ -2314,6 +2323,10 @@ packages:
     resolution: {integrity: sha512-7NzBL0rN6fMUW+f7A6Io4h40qQlG+xGmtMxfbnH/K7TAtt8JQWVQK+6g0UXKMeVJoyV5EkkNsErQ8pVD3bLHbA==}
     engines: {node: ^12.17.0 || ^14.13 || >=16.0.0}
 
+  chalk@6.0.0:
+    resolution: {integrity: sha512-2uNTXIuTTxk7ciZgAU1BQcgnchcG0xXnrs6jzkQfj9SsRa9M2s5zE8WT96hS6KmG4MzWHSrvH43DF1m4XRkrFg==}
+    engines: {node: '>=22'}
+
   change-case@4.1.2:
     resolution: {integrity: sha512-bSxY2ws9OtviILG1EiY5K7NNxkqg/JnRnFxLtKQ96JaviiIxi7djMrSd0ECT9AC+lttClmYwKw53BWpOMblo7A==}
 
@@ -2569,6 +2582,10 @@ packages:
 
   dot-case@3.0.4:
     resolution: {integrity: sha512-Kv5nKlh6yRrdrGvxeJ2e5y2eRUpkUosIW4A2AS38zwSz27zu7ufDwQPi5Jhs3XAlGNetl3bmnGhQsMtkKJnj3w==}
+
+  dotenv@17.4.2:
+    resolution: {integrity: sha512-nI4U3TottKAcAD9LLud4Cb7b2QztQMUEfHbvhTH09bqXTxnSie8WnjPALV/WMCrJZ6UV/qHJ6L03OqO3LcdYZw==}
+    engines: {node: '>=12'}
 
   dotenv@5.0.1:
     resolution: {integrity: sha512-4As8uPrjfwb7VXC+WnLCbXK7y+Ueb2B3zgNCePYfhxS1PYeaO1YTeplffTEcbfLhvFNGLAz90VvJs9yomG7bow==}
@@ -3460,6 +3477,10 @@ packages:
 
   log-update@8.0.0:
     resolution: {integrity: sha512-lddSgOt3bPASrylL54ZSpy8nBHns+vBVSoILlVOx+dei300pnLRN958rj/EdlVLKuWlSESU3qdnDZdAI7FXYGg==}
+    engines: {node: '>=22'}
+
+  loopback-connector-postgresql@9.0.2:
+    resolution: {integrity: sha512-aHDhvfq3swoAsdpqwXAoEbmzquXQEsemnmRFtPnDNOJsgaitqoB/3W8a3tqQQRHuqi8LtO42fua8Y9/lAVtBJw==}
     engines: {node: '>=22'}
 
   loopback-connector@8.0.2:
@@ -7191,6 +7212,8 @@ snapshots:
 
   chalk@5.6.2: {}
 
+  chalk@6.0.0: {}
+
   change-case@4.1.2:
     dependencies:
       camel-case: 4.1.2
@@ -7454,6 +7477,8 @@ snapshots:
     dependencies:
       no-case: 3.0.4
       tslib: 2.8.1
+
+  dotenv@17.4.2: {}
 
   dotenv@5.0.1: {}
 
@@ -8484,6 +8509,20 @@ snapshots:
       string-width: 8.2.2
       strip-ansi: 7.2.0
       wrap-ansi: 10.0.1
+
+  loopback-connector-postgresql@9.0.2:
+    dependencies:
+      async: 3.2.6
+      bluebird: 3.7.2
+      chalk: 6.0.0
+      debug: 4.4.3(supports-color@8.1.1)
+      loopback-connector: 8.0.2
+      pg: 8.23.0
+      strong-globalize: 6.0.6
+      uuid: 14.0.2
+    transitivePeerDependencies:
+      - pg-native
+      - supports-color
 
   loopback-connector@8.0.2:
     dependencies:

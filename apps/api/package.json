@@ -38,10 +38,13 @@
   "dependencies": {
     "@loopback/boot": "^8.0.16",
     "@loopback/core": "^7.0.15",
+    "@loopback/repository": "^8.0.15",
     "@loopback/rest": "^15.0.16",
     "@loopback/rest-explorer": "^8.0.16",
     "db-migrate": "^0.11.14",
     "db-migrate-pg": "^1.5.2",
+    "dotenv": "^17.4.2",
+    "loopback-connector-postgresql": "^9.0.2",
     "tslib": "^2.0.0"
   },
   "devDependencies": {

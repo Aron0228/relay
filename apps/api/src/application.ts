@@ -5,12 +5,24 @@ import {
   RestExplorerComponent,
 } from '@loopback/rest-explorer';
 import {RestApplication} from '@loopback/rest';
+import {RepositoryMixin} from '@loopback/repository';
 import path from 'path';
 import {MySequence} from './sequence';
+import * as dotenv from 'dotenv';
+
+// We need to call dotenv.config() before we import the PostgresDataSource
+// Since it reads environment variables, and if we were to import it
+// Before calling dotenv.config(), it would not have access
+// To the environment variables defined in the .env file.
+dotenv.config();
+
+import {PostgresDataSource} from './datasources/postgres.datasource';
 
 export {ApplicationConfig};
 
-export class RelayApplication extends BootMixin(RestApplication) {
+export class RelayApplication extends BootMixin(
+  RepositoryMixin(RestApplication),
+) {
   constructor(options: ApplicationConfig = {}) {
     super(options);
 
@@ -36,5 +48,7 @@ export class RelayApplication extends BootMixin(RestApplication) {
         nested: true,
       },
     };
+
+    this.dataSource(PostgresDataSource, 'postgres');
   }
 }
