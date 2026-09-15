@@ -4,6 +4,16 @@ import {
   givenHttpServerConfig,
   Client,
 } from '@loopback/testlab';
+import path from 'path';
+import {POSTGRES_CONFIG_BINDING_KEY} from '../../datasources/postgres.datasource';
+
+const testPostgresConfig = {
+  name: 'postgres',
+  connector: 'postgresql',
+  url:
+    process.env.POSTGRES_TEST_URL ??
+    'postgres://postgres:postgres@localhost/relay_test',
+};
 
 export async function setupApplication(): Promise<AppWithClient> {
   const restConfig = givenHttpServerConfig({
@@ -17,6 +27,10 @@ export async function setupApplication(): Promise<AppWithClient> {
   const app = new RelayApplication({
     rest: restConfig,
   });
+
+  app.projectRoot = path.resolve(__dirname, '../../../dist');
+
+  app.bind(POSTGRES_CONFIG_BINDING_KEY).to(testPostgresConfig);
 
   await app.boot();
   await app.start();

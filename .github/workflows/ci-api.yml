@@ -30,6 +30,22 @@ jobs:
     name: API
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      POSTGRES_TEST_URL: postgres://postgres:postgres@127.0.0.1:5432/relay_test
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: relay_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d relay_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -48,6 +64,17 @@ jobs:
 
       - name: Lint API
         run: pnpm --dir apps/api run lint
+
+      - name: Run test database migrations
+        working-directory: apps/api
+        shell: bash
+        run: |
+          # db-migrate uses JavaScript entry points, including for SQL migrations.
+          if compgen -G 'migrations/*.js' > /dev/null; then
+            pnpm exec db-migrate up --env test
+          else
+            echo "No migrations found; skipping database migrations."
+          fi
 
       - name: Test API with coverage
         run: pnpm --dir apps/api run coverage

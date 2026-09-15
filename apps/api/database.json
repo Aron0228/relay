@@ -1,5 +1,11 @@
 {
   "sql-file": "true",
+  "test": {
+    "driver": "pg",
+    "url": {
+      "ENV": "POSTGRES_TEST_URL"
+    }
+  },
   "dev": {
     "driver": "pg",
     "url": {
