@@ -16,13 +16,18 @@
     "build:watch": "tsc --watch",
     "clean": "rimraf dist *.tsbuildinfo .eslintcache",
     "lint": "eslint --report-unused-disable-directives --ext .ts .",
-    "test": "lb-mocha --allow-console-logs \"dist/__tests__\"",
-    "pretest": "npm run rebuild",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "coverage": "vitest run --coverage",
+    "test:typecheck": "tsc --project tsconfig.test.json",
+    "pretest": "npm run rebuild && npm run test:typecheck",
     "openapi-spec": "node ./dist/openapi-spec",
     "prestart": "npm run rebuild",
     "start": "node -r source-map-support/register .",
     "prepare": "npm run build",
-    "rebuild": "npm run clean && npm run build"
+    "rebuild": "npm run clean && npm run build",
+    "precoverage": "npm run pretest",
+    "pretest:watch": "npm run pretest"
   },
   "repository": {
     "type": "git"
@@ -38,21 +43,27 @@
   "dependencies": {
     "@loopback/boot": "^8.0.16",
     "@loopback/core": "^7.0.15",
+    "@loopback/repository": "^8.0.15",
     "@loopback/rest": "^15.0.16",
     "@loopback/rest-explorer": "^8.0.16",
+    "db-migrate": "^0.11.14",
+    "db-migrate-pg": "^1.5.2",
+    "dotenv": "^17.4.2",
+    "loopback-connector-postgresql": "^9.0.2",
     "tslib": "^2.0.0"
   },
   "devDependencies": {
     "@loopback/build": "^12.0.15",
     "@loopback/eslint-config": "^16.0.1",
-    "eslint": "^8.57.1",
-    "@typescript-eslint/eslint-plugin": "^8.69.0",
-    "@typescript-eslint/parser": "^8.69.0",
-    "@types/mocha": "^10.0.10",
-    "rimraf": "^5.0.10",
-    "source-map-support": "^0.5.21",
     "@loopback/testlab": "^8.0.15",
     "@types/node": "^20.19.43",
-    "typescript": "~5.2.2"
+    "@vitest/coverage-v8": "^4.1.11",
+    "@typescript-eslint/eslint-plugin": "^8.69.0",
+    "@typescript-eslint/parser": "^8.69.0",
+    "eslint": "^8.57.1",
+    "rimraf": "^5.0.10",
+    "source-map-support": "^0.5.21",
+    "typescript": "~5.2.2",
+    "vitest": "^4.1.11"
   }
 }

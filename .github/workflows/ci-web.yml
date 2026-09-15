@@ -1,0 +1,54 @@
+name: CI - Web client
+
+on:
+  push:
+    paths:
+      - 'apps/web-client/**'
+      - '.github/workflows/ci-web.yml'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+  pull_request:
+    paths:
+      - 'apps/web-client/**'
+      - '.github/workflows/ci-web.yml'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: Web client
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: pnpm
+
+      - name: Install web client dependencies
+        run: pnpm --filter ./apps/web-client install --frozen-lockfile
+
+      - name: Lint web client
+        run: pnpm --dir apps/web-client run lint
+
+      - name: Test web client
+        run: pnpm --dir apps/web-client run test --watch=false
+
+      - name: Build web client
+        run: pnpm run build:web
