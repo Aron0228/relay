@@ -1,17 +1,18 @@
 import {Client} from '@loopback/testlab';
-import {RelayApplication} from '../..';
+import {afterAll, beforeAll, describe, it} from 'vitest';
+import type {RelayApplication} from '../../application';
 import {setupApplication} from './test-helper';
 
 describe('HomePage', () => {
   let app: RelayApplication;
   let client: Client;
 
-  before('setupApplication', async () => {
+  beforeAll(async () => {
     ({app, client} = await setupApplication());
   });
 
-  after(async () => {
-    await app.stop();
+  afterAll(async () => {
+    await app?.stop();
   });
 
   it('exposes a default home page', async () => {
