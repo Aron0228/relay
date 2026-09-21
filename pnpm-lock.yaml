@@ -132,8 +132,8 @@ importers:
         specifier: ^30.0.1
         version: 30.0.1(@noble/hashes@1.8.0)
       prettier:
-        specifier: ^3.8.1
-        version: 3.9.6
+        specifier: ^3.9.8
+        version: 3.9.8
       typescript:
         specifier: ~6.0.2
         version: 6.0.3
@@ -4035,6 +4035,11 @@ packages:
 
   prettier@3.9.6:
     resolution: {integrity: sha512-OpN0zzVdiaiAhxpuuj5efpIS4sY9j7bY6uR5mnj5yPzGkdkjNKSJeUThPb60Jw29QuAZgA4o+/iB49kFiaBX6g==}
+    engines: {node: '>=14'}
+    hasBin: true
+
+  prettier@3.9.8:
+    resolution: {integrity: sha512-WRFq3Wn3WId7LLROfMLdH7xaFr2jR62wU8nLO6rQUOLOxNZUviyJQs1M0iIhLexSFy+L+w0ch66wtoO2jRjG0A==}
     engines: {node: '>=14'}
     hasBin: true
 
@@ -9157,6 +9162,8 @@ snapshots:
   prettier@2.8.8: {}
 
   prettier@3.9.6: {}
+
+  prettier@3.9.8: {}
 
   proc-log@7.0.0: {}
 
