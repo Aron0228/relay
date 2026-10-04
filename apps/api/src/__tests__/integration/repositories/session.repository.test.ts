@@ -9,14 +9,14 @@ import {
   expect,
   it,
 } from 'vitest';
-import type {RelayApplication} from '../../application';
-import type {Session, User} from '../../models';
-import type {SessionRepository, UserRepository} from '../../repositories';
+import type {RelayApplication} from '../../../application';
+import type {Session, User} from '../../../models';
+import type {SessionRepository, UserRepository} from '../../../repositories';
 import {
   SESSION_REPOSITORY_BINDING_KEY,
   USER_REPOSITORY_BINDING_KEY,
-} from '../../repositories';
-import {setupApplication} from '../acceptance/test-helper';
+} from '../../../repositories';
+import {setupApplication} from '../../acceptance/test-helper';
 
 describe('SessionRepository (integration)', () => {
   let app: RelayApplication;

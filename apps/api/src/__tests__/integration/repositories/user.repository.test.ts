@@ -1,9 +1,9 @@
 import {randomInt, randomUUID} from 'node:crypto';
 import {afterAll, afterEach, beforeAll, describe, expect, it} from 'vitest';
-import type {RelayApplication} from '../../application';
-import type {UserRepository} from '../../repositories';
-import {USER_REPOSITORY_BINDING_KEY} from '../../repositories';
-import {setupApplication} from '../acceptance/test-helper';
+import type {RelayApplication} from '../../../application';
+import type {UserRepository} from '../../../repositories';
+import {USER_REPOSITORY_BINDING_KEY} from '../../../repositories';
+import {setupApplication} from '../../acceptance/test-helper';
 
 describe('UserRepository (integration)', () => {
   let app: RelayApplication;
