@@ -1,8 +1,8 @@
 import {afterAll, beforeAll, describe, expect, it, vi} from 'vitest';
-import {setupApplication} from './test-helper';
-import type {RelayApplication} from '../../application';
-import type {RedisService} from '../../services';
-import {REDIS_SERVICE_BINDING_KEY} from '../../services';
+import {setupApplication} from '../test-helper';
+import type {RelayApplication} from '../../../application';
+import type {RedisService} from '../../../services';
+import {REDIS_SERVICE_BINDING_KEY} from '../../../services';
 
 describe('RedisService (acceptance)', () => {
   let app: RelayApplication;
