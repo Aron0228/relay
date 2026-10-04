@@ -47,6 +47,11 @@ export class RelayApplication extends BootMixin(
         extensions: ['.controller.js'],
         nested: true,
       },
+      services: {
+        dirs: ['services'],
+        extensions: ['.service.js'],
+        nested: true,
+      },
     };
 
     this.dataSource(PostgresDataSource, 'postgres');
