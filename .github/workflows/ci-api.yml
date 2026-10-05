@@ -90,13 +90,14 @@ jobs:
       - name: Test API with coverage
         run: pnpm --dir apps/api run coverage
 
+      - name: Build API
+        run: pnpm run build:api
+
       - name: Upload API coverage to Codecov
         uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: apps/api/coverage/lcov.info
           flags: api
+          use_pypi: true
           fail_ci_if_error: true
-
-      - name: Build API
-        run: pnpm run build:api
