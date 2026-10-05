@@ -323,7 +323,9 @@ describe('OAuth callback (acceptance)', () => {
     'does not issue an exchange code when GitHub returns %s',
     async failure => {
       const transaction = await login();
-      const before = await exchanges.count();
+      const user = await users.resolveGithubUser(githubId, 'Finn-the-human');
+
+      const before = await exchanges.count({userId: user.id});
 
       fetchMock.mockResolvedValueOnce(
         // eslint-disable-next-line @typescript-eslint/naming-convention
@@ -342,7 +344,7 @@ describe('OAuth callback (acceptance)', () => {
         .query({state: transaction.state, code: 'bad-user'})
         .expect(502);
 
-      expect(await exchanges.count()).toEqual(before);
+      expect(await exchanges.count({userId: user.id})).toEqual(before);
       expect(await transactions.exists(transaction.state)).toBe(false);
     },
   );

@@ -1,4 +1,4 @@
-import {RelayApplication} from '../..';
+import {RelayApplication} from '../../application';
 import {
   createRestAppClient,
   givenHttpServerConfig,

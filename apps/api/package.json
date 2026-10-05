@@ -41,12 +41,14 @@
     "!*/__tests__"
   ],
   "dependencies": {
+    "@loopback/authentication": "^12.0.17",
     "@loopback/boot": "^8.0.16",
     "@loopback/core": "^7.0.15",
     "@loopback/repository": "^8.0.15",
     "@loopback/rest": "^15.0.16",
     "@loopback/rest-explorer": "^8.0.16",
     "@loopback/security": "^0.12.16",
+    "cookie": "^1.1.1",
     "db-migrate": "^0.11.14",
     "db-migrate-pg": "^1.5.2",
     "dotenv": "^17.4.2",

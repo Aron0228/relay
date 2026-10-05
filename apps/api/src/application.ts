@@ -1,4 +1,8 @@
 import {BootMixin} from '@loopback/boot';
+import {
+  AuthenticationComponent,
+  registerAuthenticationStrategy,
+} from '@loopback/authentication';
 import {ApplicationConfig} from '@loopback/core';
 import {
   RestExplorerBindings,
@@ -17,6 +21,7 @@ import * as dotenv from 'dotenv';
 dotenv.config();
 
 import {PostgresDataSource} from './datasources/postgres.datasource';
+import {SessionStrategy} from './strategies';
 
 export {ApplicationConfig};
 
@@ -28,6 +33,8 @@ export class RelayApplication extends BootMixin(
 
     // Set up the custom sequence
     this.sequence(MySequence);
+    this.component(AuthenticationComponent);
+    registerAuthenticationStrategy(this, SessionStrategy);
 
     // Set up default home page
     this.static('/', path.join(__dirname, '../public'));
