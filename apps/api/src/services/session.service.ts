@@ -1,7 +1,13 @@
 import {BindingScope, injectable, service} from '@loopback/core';
 import {securityId, UserProfile} from '@loopback/security';
 import {createHash, randomBytes} from 'node:crypto';
-import {Session, User} from '../models';
+import {
+  OAuthClientType,
+  OAUTH_CLIENT_TYPE,
+  OAuthTransaction,
+  Session,
+  User,
+} from '../models';
 import {SessionStoreService} from './session-store.service';
 
 export const SESSION_SERVICE_BINDING_KEY = 'services.SessionService';
@@ -13,6 +19,12 @@ export interface CreatedSession {
 
 @injectable({scope: BindingScope.SINGLETON})
 export class SessionService {
+  private readonly oauthTransactionTtlMs =
+    Number(process.env.OAUTH_TRANSACTION_TTL_MINUTES ?? 5) * 60 * 1000;
+  private readonly oauthRedirectUris = {
+    [OAUTH_CLIENT_TYPE.Web]: process.env.OAUTH_WEB_REDIRECT_URI,
+    [OAUTH_CLIENT_TYPE.Mobile]: process.env.OAUTH_MOBILE_REDIRECT_URI,
+  };
   private readonly idleTimeoutMs =
     Number(process.env.SESSION_IDLE_TIMEOUT_MINUTES ?? 30) * 60 * 1000; // 30 minutes by default
   private readonly absoluteTimeoutMs =
@@ -72,6 +84,35 @@ export class SessionService {
   async getUserProfile(token: string): Promise<UserProfile | null> {
     const session = await this.get(token);
     return session?.userProfile ?? null;
+  }
+
+  async createOAuthTransaction(
+    clientType: OAuthClientType,
+  ): Promise<OAuthTransaction> {
+    const redirectUri = this.oauthRedirectUris[clientType];
+    if (!redirectUri) {
+      throw new Error(
+        'An approved OAuth redirect URI must be configured for this client',
+      );
+    }
+    const createdAt = new Date();
+    return this.sessionStore.createTransaction({
+      state: randomBytes(32).toString('base64url'),
+      codeVerifier: randomBytes(32).toString('base64url'),
+      clientType,
+      redirectUri,
+      createdAt,
+      expiresAt: new Date(createdAt.getTime() + this.oauthTransactionTtlMs),
+    });
+  }
+
+  async consumeOAuthTransaction(
+    state: string,
+  ): Promise<OAuthTransaction | null> {
+    const transaction = await this.sessionStore.consumeTransaction(state);
+    return transaction && transaction.expiresAt.getTime() > Date.now()
+      ? transaction
+      : null;
   }
 
   private hashToken(token: string): string {
