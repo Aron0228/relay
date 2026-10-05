@@ -2,8 +2,12 @@ import {BindingScope, injectable, service} from '@loopback/core';
 import {DataObject, repository} from '@loopback/repository';
 import {securityId} from '@loopback/security';
 import Redis from 'ioredis';
-import {OAuthTransaction, Session} from '../models';
-import {OAuthTransactionRepository, SessionRepository} from '../repositories';
+import {ExchangeCode, OAuthTransaction, Session} from '../models';
+import {
+  ExchangeCodeRepository,
+  OAuthTransactionRepository,
+  SessionRepository,
+} from '../repositories';
 import {RedisService} from './redis.service';
 
 export const SESSION_STORE_SERVICE_BINDING_KEY = 'services.SessionStoreService';
@@ -27,6 +31,8 @@ export class SessionStoreService {
     @repository(SessionRepository) private sessionRepository: SessionRepository,
     @repository(OAuthTransactionRepository)
     private transactionRepository: OAuthTransactionRepository,
+    @repository(ExchangeCodeRepository)
+    private exchangeRepository: ExchangeCodeRepository,
   ) {}
 
   async create(data: DataObject<Session>): Promise<Session> {
@@ -149,6 +155,39 @@ export class SessionStoreService {
 
   private transactionCacheKey(state: string): string {
     return `relay:oauth-transaction:${state}`;
+  }
+
+  async createExchangeCode(
+    data: DataObject<ExchangeCode>,
+  ): Promise<ExchangeCode> {
+    const exchange = await this.exchangeRepository.create(data);
+    await this.withRedis(client =>
+      client.set(
+        this.exchangeCacheKey(exchange.codeHash),
+        JSON.stringify(exchange.toJSON()),
+        'PXAT',
+        exchange.expiresAt.getTime(),
+      ),
+    );
+    return exchange;
+  }
+
+  async consumeExchangeCode(codeHash: string): Promise<ExchangeCode | null> {
+    const exchange = await this.exchangeRepository.consume(codeHash);
+
+    await this.withRedis(client => client.del(this.exchangeCacheKey(codeHash)));
+
+    return exchange;
+  }
+
+  async deleteExchangeCode(codeHash: string): Promise<void> {
+    await this.exchangeRepository.deleteAll({codeHash});
+
+    await this.withRedis(client => client.del(this.exchangeCacheKey(codeHash)));
+  }
+
+  private exchangeCacheKey(codeHash: string): string {
+    return `relay:exchange-code:${codeHash}`;
   }
 
   private async cacheTransaction(transaction: OAuthTransaction): Promise<void> {

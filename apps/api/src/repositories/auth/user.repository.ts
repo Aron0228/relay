@@ -19,4 +19,15 @@ export class UserRepository extends DefaultCrudRepository<
   ) {
     super(User, postgresDataSource);
   }
+
+  async resolveGithubUser(githubId: number, username: string): Promise<User> {
+    const rows = (await this.dataSource.execute(
+      `INSERT INTO auth."user" (github_id, username) VALUES ($1, $2)
+       ON CONFLICT (github_id) DO UPDATE SET username = EXCLUDED.username
+       RETURNING id, github_id AS "githubId", username`,
+      [githubId, username],
+    )) as User[];
+
+    return new User(rows[0]);
+  }
 }
