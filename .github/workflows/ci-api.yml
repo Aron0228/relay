@@ -94,7 +94,7 @@ jobs:
         run: pnpm run build:api
 
       - name: Upload API coverage to Codecov
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: apps/api/coverage/lcov.info
