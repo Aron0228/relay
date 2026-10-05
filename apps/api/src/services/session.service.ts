@@ -12,6 +12,7 @@ import {
 import {SessionStoreService} from './session-store.service';
 
 export const SESSION_SERVICE_BINDING_KEY = 'services.SessionService';
+export const SESSION_COOKIE_NAME = '__Host-relay_session';
 
 export interface CreatedSession {
   token: string;
