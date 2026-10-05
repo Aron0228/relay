@@ -21,6 +21,7 @@ describe('OAuth callback (acceptance)', () => {
   let redis: ReturnType<RedisService['getClient']>;
   const states: string[] = [];
   const hashes: string[] = [];
+  const sessionHashes: string[] = [];
   const githubId = randomInt(100000000, 2000000000);
   const fetchMock = vi.fn<typeof fetch>();
   const hash = (code: string) =>
@@ -62,6 +63,7 @@ describe('OAuth callback (acceptance)', () => {
     try {
       for (const state of states) await store.deleteTransaction(state);
       for (const codeHash of hashes) await store.deleteExchangeCode(codeHash);
+      for (const tokenHash of sessionHashes) await store.delete(tokenHash);
 
       await users.deleteAll({githubId});
     } finally {
@@ -191,6 +193,41 @@ describe('OAuth callback (acceptance)', () => {
     expect((await exchanges.findById(codeHash)).userId).toBe(existing.id);
     expect((await users.findById(existing.id)).username).toBe('Finn-the-human');
     expect((await users.count({githubId})).count).toBe(1);
+  });
+
+  it('completes Finn’s mobile login from authorization through session exchange', async () => {
+    const transaction = await login(OAUTH_CLIENT_TYPE.Mobile);
+
+    githubSuccess();
+
+    const callback = await client
+      .get('/api/sessions/callback')
+      .query({state: transaction.state, code: 'finn-full-login'})
+      .expect(302);
+
+    const exchangeCode = new URL(callback.headers.location).searchParams.get(
+      'exchange_code',
+    )!;
+
+    hashes.push(hash(exchangeCode));
+
+    const response = await client
+      .post('/api/sessions/exchange')
+      .send({exchangeCode})
+      .expect(200);
+
+    sessionHashes.push(hash(response.body.token));
+
+    const session = await store.get(hash(response.body.token));
+
+    expect(session?.userProfile.name).toBe('Finn-the-human');
+    expect(session?.tokenHash).not.toBe(response.body.token);
+    expect(response.headers['set-cookie']).toBeUndefined();
+
+    await client
+      .post('/api/sessions/exchange')
+      .send({exchangeCode})
+      .expect(401);
   });
 
   it('rejects missing, unknown and expired state before contacting GitHub', async () => {
