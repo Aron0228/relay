@@ -1,5 +1,6 @@
 import {BindingScope, injectable, service} from '@loopback/core';
 import {securityId, UserProfile} from '@loopback/security';
+import {HttpErrors} from '@loopback/rest';
 import {createHash, randomBytes} from 'node:crypto';
 import {
   OAuthClientType,
@@ -19,6 +20,8 @@ export interface CreatedSession {
 
 @injectable({scope: BindingScope.SINGLETON})
 export class SessionService {
+  private readonly githubClientId = process.env.GITHUB_OAUTH_CLIENT_ID;
+  private readonly githubCallbackUri = process.env.GITHUB_OAUTH_CALLBACK_URI;
   private readonly oauthTransactionTtlMs =
     Number(process.env.OAUTH_TRANSACTION_TTL_MINUTES ?? 5) * 60 * 1000;
   private readonly oauthRedirectUris = {
@@ -104,6 +107,24 @@ export class SessionService {
       createdAt,
       expiresAt: new Date(createdAt.getTime() + this.oauthTransactionTtlMs),
     });
+  }
+
+  async createOAuthLoginUrl(clientType: OAuthClientType): Promise<string> {
+    if (!this.githubClientId || !this.githubCallbackUri) {
+      throw new HttpErrors.ServiceUnavailable('GitHub OAuth is not configured');
+    }
+
+    const transaction = await this.createOAuthTransaction(clientType);
+    const url = new URL('https://github.com/login/oauth/authorize');
+    url.searchParams.set('client_id', this.githubClientId);
+    url.searchParams.set('redirect_uri', this.githubCallbackUri);
+    url.searchParams.set('state', transaction.state);
+    url.searchParams.set(
+      'code_challenge',
+      createHash('sha256').update(transaction.codeVerifier).digest('base64url'),
+    );
+    url.searchParams.set('code_challenge_method', 'S256');
+    return url.toString();
   }
 
   async consumeOAuthTransaction(
