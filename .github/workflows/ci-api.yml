@@ -32,7 +32,18 @@ jobs:
     timeout-minutes: 15
     env:
       POSTGRES_TEST_URL: postgres://postgres:postgres@127.0.0.1:5432/relay_test
+      REDIS_TEST_HOST: 127.0.0.1
+      REDIS_TEST_PORT: 6379
     services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
       postgres:
         image: postgres:17
         env:
@@ -79,13 +90,14 @@ jobs:
       - name: Test API with coverage
         run: pnpm --dir apps/api run coverage
 
+      - name: Build API
+        run: pnpm run build:api
+
       - name: Upload API coverage to Codecov
         uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: apps/api/coverage/lcov.info
           flags: api
+          use_pypi: true
           fail_ci_if_error: true
-
-      - name: Build API
-        run: pnpm run build:api
