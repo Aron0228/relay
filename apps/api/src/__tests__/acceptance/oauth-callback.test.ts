@@ -1,5 +1,5 @@
 import {Client} from '@loopback/testlab';
-import {createHash, randomInt} from 'node:crypto';
+import {createHash, randomInt, randomUUID} from 'node:crypto';
 import {afterAll, afterEach, beforeAll, describe, expect, it, vi} from 'vitest';
 import type {RelayApplication} from '../../application';
 import {OAUTH_CLIENT_TYPE, OAuthClientType} from '../../models';
@@ -8,7 +8,11 @@ import {
   OAuthTransactionRepository,
   UserRepository,
 } from '../../repositories';
-import {RedisService, SessionStoreService} from '../../services';
+import {
+  LoginRateLimitService,
+  RedisService,
+  SessionStoreService,
+} from '../../services';
 import {setupApplication} from './test-helper';
 
 describe('OAuth callback (acceptance)', () => {
@@ -23,6 +27,8 @@ describe('OAuth callback (acceptance)', () => {
   const hashes: string[] = [];
   const sessionHashes: string[] = [];
   const githubId = randomInt(100000000, 2000000000);
+  const testAddress = `finn-${randomUUID()}`;
+  const rateLimitKey = `relay:login-rate-limit:${createHash('sha256').update(testAddress).digest('hex')}`;
   const fetchMock = vi.fn<typeof fetch>();
   const hash = (code: string) =>
     createHash('sha256').update(code).digest('hex');
@@ -44,9 +50,17 @@ describe('OAuth callback (acceptance)', () => {
     );
     vi.stubEnv('OAUTH_MOBILE_REDIRECT_URI', 'ooo://tree-fort/auth');
     vi.stubEnv('OAUTH_EXCHANGE_TTL_SECONDS', '60');
+    vi.stubEnv('LOGIN_MAX_ATTEMPTS', '100');
     vi.stubGlobal('fetch', fetchMock);
 
     ({app, client} = await setupApplication());
+
+    const limiter = await app.get<LoginRateLimitService>(
+      'services.LoginRateLimitService',
+    );
+    const consume = limiter.consume.bind(limiter);
+
+    vi.spyOn(limiter, 'consume').mockImplementation(() => consume(testAddress));
 
     transactions = await app.get('repositories.OAuthTransactionRepository');
     exchanges = await app.get('repositories.ExchangeCodeRepository');
@@ -66,10 +80,12 @@ describe('OAuth callback (acceptance)', () => {
       for (const tokenHash of sessionHashes) await store.delete(tokenHash);
 
       await users.deleteAll({githubId});
+      await redis.del(rateLimitKey);
     } finally {
       await app?.stop();
 
       vi.unstubAllGlobals();
+      vi.restoreAllMocks();
       vi.unstubAllEnvs();
     }
   });

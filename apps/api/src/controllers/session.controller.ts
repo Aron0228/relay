@@ -3,6 +3,7 @@ import {authenticate} from '@loopback/authentication';
 import {SecurityBindings, UserProfile} from '@loopback/security';
 import {
   get,
+  HttpErrors,
   param,
   post,
   requestBody,
@@ -12,6 +13,7 @@ import {
 } from '@loopback/rest';
 import {OAuthClientType, OAUTH_CLIENT_TYPE} from '../models';
 import {
+  LoginRateLimitService,
   OAuthCallbackService,
   SESSION_COOKIE_NAME,
   SessionExchangeService,
@@ -26,6 +28,8 @@ export class SessionController {
     @service(OAuthCallbackService) private oauthCallback: OAuthCallbackService,
     @service(SessionExchangeService)
     private sessionExchange: SessionExchangeService,
+    @service(LoginRateLimitService)
+    private loginRateLimit: LoginRateLimitService,
   ) {}
 
   @authenticate('session')
@@ -71,6 +75,10 @@ export class SessionController {
         description: 'Redirect to GitHub to authorize the login',
         headers: {Location: {schema: {type: 'string'}}},
       },
+      '429': {
+        description: 'Too many login attempts; retry after the indicated delay',
+      },
+      '503': {description: 'Login rate limiting is temporarily unavailable'},
     },
   })
   async login(
@@ -82,9 +90,24 @@ export class SessionController {
       },
     })
     client: OAuthClientType = OAUTH_CLIENT_TYPE.Web,
+    @inject(RestBindings.Http.REQUEST) request: Request,
   ): Promise<void> {
-    const url = await this.sessionService.createOAuthLoginUrl(client);
     this.response.setHeader('Cache-Control', 'no-store');
+
+    const retryAfter = await this.loginRateLimit.consume(
+      request.ip ?? request.socket.remoteAddress ?? 'unknown',
+    );
+
+    if (retryAfter) {
+      this.response.setHeader('Retry-After', String(retryAfter));
+
+      throw new HttpErrors.TooManyRequests(
+        'Too many login attempts. Please try again later.',
+      );
+    }
+
+    const url = await this.sessionService.createOAuthLoginUrl(client);
+
     this.response.redirect(302, url);
   }
 
