@@ -1,5 +1,5 @@
 import {Client} from '@loopback/testlab';
-import {createHash} from 'node:crypto';
+import {createHash, randomUUID} from 'node:crypto';
 import {afterAll, beforeAll, describe, expect, it, vi} from 'vitest';
 import type {RelayApplication} from '../../application';
 import {OAUTH_CLIENT_TYPE} from '../../models';
@@ -10,6 +10,8 @@ import {
 import {
   SESSION_STORE_SERVICE_BINDING_KEY,
   SessionStoreService,
+  RedisService,
+  LoginRateLimitService,
 } from '../../services';
 import {setupApplication} from './test-helper';
 
@@ -18,6 +20,9 @@ describe('SessionController (acceptance)', () => {
   let client: Client;
   let repository: OAuthTransactionRepository;
   let store: SessionStoreService;
+  let redis: ReturnType<RedisService['getClient']>;
+  const testAddress = `ice-king-${randomUUID()}`;
+  const rateLimitKey = `relay:login-rate-limit:${createHash('sha256').update(testAddress).digest('hex')}`;
   const states: string[] = [];
   const webRedirect = 'https://candy-kingdom.example/auth/callback';
   const mobileRedirect = 'ooo://tree-fort/auth/callback';
@@ -33,7 +38,22 @@ describe('SessionController (acceptance)', () => {
     vi.stubEnv('OAUTH_WEB_REDIRECT_URI', webRedirect);
     vi.stubEnv('OAUTH_MOBILE_REDIRECT_URI', mobileRedirect);
     vi.stubEnv('OAUTH_TRANSACTION_TTL_MINUTES', '2');
+    vi.stubEnv('LOGIN_MAX_ATTEMPTS', '3');
+    vi.stubEnv('LOGIN_WINDOW_MINUTES', '10');
+
     ({app, client} = await setupApplication());
+
+    const limiter = await app.get<LoginRateLimitService>(
+      'services.LoginRateLimitService',
+    );
+    const consume = limiter.consume.bind(limiter);
+
+    vi.spyOn(limiter, 'consume').mockImplementation(() => consume(testAddress));
+
+    redis = (await app.get<RedisService>('services.RedisService')).getClient();
+
+    await redis.del(rateLimitKey);
+
     repository = await app.get<OAuthTransactionRepository>(
       OAUTH_TRANSACTION_REPOSITORY_BINDING_KEY,
     );
@@ -46,6 +66,8 @@ describe('SessionController (acceptance)', () => {
   afterAll(async () => {
     try {
       for (const state of states) await store.deleteTransaction(state);
+
+      await redis.del(rateLimitKey);
     } finally {
       await app?.stop();
       vi.restoreAllMocks();
@@ -99,5 +121,37 @@ describe('SessionController (acceptance)', () => {
     } finally {
       create.mockRestore();
     }
+  });
+
+  it('blocks Ice King’s repeated logins before creating a transaction', async () => {
+    const create = vi.spyOn(repository, 'create');
+    try {
+      const response = await client
+        .get('/api/sessions/login?client=mobile')
+        .set('X-Forwarded-For', '203.0.113.42')
+        .expect(429);
+
+      expect(Number(response.headers['retry-after'])).toBeGreaterThan(0);
+      expect(response.headers['cache-control']).toBe('no-store');
+      expect(response.headers.location).toBeUndefined();
+      expect(create).not.toHaveBeenCalled();
+    } finally {
+      create.mockRestore();
+    }
+  });
+
+  it('ignores a forged forwarded IP when determining the login limit', async () => {
+    const limiter = await app.get<LoginRateLimitService>(
+      'services.LoginRateLimitService',
+    );
+
+    vi.mocked(limiter.consume).mockClear();
+
+    await client
+      .get('/api/sessions/login')
+      .set('X-Forwarded-For', '203.0.113.99')
+      .expect(429);
+
+    expect(limiter.consume).toHaveBeenCalledWith('127.0.0.1');
   });
 });
