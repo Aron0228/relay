@@ -116,15 +116,19 @@ export class SessionService {
     }
 
     const transaction = await this.createOAuthTransaction(clientType);
+
     const url = new URL('https://github.com/login/oauth/authorize');
+
     url.searchParams.set('client_id', this.githubClientId);
     url.searchParams.set('redirect_uri', this.githubCallbackUri);
     url.searchParams.set('state', transaction.state);
+    url.searchParams.set('prompt', 'select_account');
     url.searchParams.set(
       'code_challenge',
       createHash('sha256').update(transaction.codeVerifier).digest('base64url'),
     );
     url.searchParams.set('code_challenge_method', 'S256');
+
     return url.toString();
   }
 
