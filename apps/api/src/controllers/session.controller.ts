@@ -1,9 +1,12 @@
 import {inject, service} from '@loopback/core';
+import {authenticate} from '@loopback/authentication';
+import {SecurityBindings, UserProfile} from '@loopback/security';
 import {
   get,
   param,
   post,
   requestBody,
+  Request,
   Response,
   RestBindings,
 } from '@loopback/rest';
@@ -14,6 +17,7 @@ import {
   SessionExchangeService,
   SessionService,
 } from '../services';
+import {getSessionToken} from '../utils/session-token';
 
 export class SessionController {
   constructor(
@@ -23,6 +27,43 @@ export class SessionController {
     @service(SessionExchangeService)
     private sessionExchange: SessionExchangeService,
   ) {}
+
+  @authenticate('session')
+  @get('/api/sessions/me', {
+    responses: {
+      '200': {
+        description: 'The authenticated user profile',
+        content: {'application/json': {schema: {type: 'object'}}},
+      },
+      '401': {description: 'A valid session is required'},
+    },
+  })
+  me(@inject(SecurityBindings.USER) profile: UserProfile): UserProfile {
+    this.response.setHeader('Cache-Control', 'no-store');
+    return profile;
+  }
+
+  @post('/api/sessions/logout', {
+    responses: {'204': {description: 'Session invalidated and cookie cleared'}},
+  })
+  async logout(
+    @inject(RestBindings.Http.REQUEST) request: Request,
+  ): Promise<void> {
+    this.response.setHeader('Cache-Control', 'no-store');
+
+    const token = getSessionToken(request);
+
+    if (token) await this.sessionService.invalidate(token);
+
+    // Allow logout even after expiry so the browser can always clear its cookie.
+    this.response.clearCookie(SESSION_COOKIE_NAME, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'lax',
+      path: '/',
+    });
+    this.response.status(204);
+  }
 
   @get('/api/sessions/login', {
     responses: {

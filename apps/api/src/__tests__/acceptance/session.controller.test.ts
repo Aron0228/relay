@@ -72,6 +72,7 @@ describe('SessionController (acceptance)', () => {
       );
       expect(url.searchParams.get('client_id')).toBe('princess-bubblegum');
       expect(url.searchParams.get('redirect_uri')).toBe(callback);
+      expect(url.searchParams.get('prompt')).toBe('select_account');
       expect(url.searchParams.get('code_challenge_method')).toBe('S256');
       expect(url.searchParams.get('code_challenge')).toBe(
         createHash('sha256')
