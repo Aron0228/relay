@@ -28,7 +28,8 @@
                 "input": "public"
               }
             ],
-            "styles": ["src/styles.css"]
+            "styles": ["src/styles.css"],
+            "define": { "API_BASE_URL": "\"/api\"" }
           },
           "configurations": {
             "production": {
@@ -64,7 +65,10 @@
               "buildTarget": "relay:build:development"
             }
           },
-          "defaultConfiguration": "development"
+          "defaultConfiguration": "development",
+          "options": {
+            "proxyConfig": "proxy.conf.mjs"
+          }
         },
         "test": {
           "builder": "@angular/build:unit-test"

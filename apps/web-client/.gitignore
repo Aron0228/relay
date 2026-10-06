@@ -2,6 +2,8 @@
 
 # Compiled output
 /dist
+/.env
+/.env.development
 /tmp
 /out-tsc
 /bazel-out
