@@ -1,0 +1,18 @@
+:host {
+  display: block;
+  font-family: system-ui, sans-serif;
+}
+main {
+  max-width: 640px;
+  margin: 4rem auto;
+  padding: 1.5rem;
+}
+button {
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+}
+pre {
+  padding: 1rem;
+  background: #f3f4f6;
+  overflow: auto;
+}
