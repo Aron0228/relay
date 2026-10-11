@@ -8,7 +8,7 @@ import {
   RestExplorerBindings,
   RestExplorerComponent,
 } from '@loopback/rest-explorer';
-import {RestApplication} from '@loopback/rest';
+import {RestApplication, RestBindings} from '@loopback/rest';
 import {RepositoryMixin} from '@loopback/repository';
 import path from 'path';
 import {MySequence} from './sequence';
@@ -33,6 +33,11 @@ export class RelayApplication extends BootMixin(
 
     // Set up the custom sequence
     this.sequence(MySequence);
+
+    this.bind(RestBindings.REQUEST_BODY_PARSER_OPTIONS).to({
+      raw: {limit: '25mb', inflate: false},
+    });
+
     this.component(AuthenticationComponent);
     registerAuthenticationStrategy(this, SessionStrategy);
 
