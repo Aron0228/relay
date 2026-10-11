@@ -76,6 +76,9 @@ jobs:
       - name: Lint API
         run: pnpm --dir apps/api run lint
 
+      - name: Install Playwright Chromium
+        run: pnpm --dir apps/api exec playwright install --with-deps chromium
+
       - name: Run test database migrations
         working-directory: apps/api
         shell: bash

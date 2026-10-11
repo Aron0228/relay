@@ -32,8 +32,28 @@ if (require.main === module) {
       },
     },
   };
-  main(config).catch(err => {
-    console.error('Cannot start the application.', err);
-    process.exit(1);
-  });
+  main(config)
+    .then(app => {
+      let stopping = false;
+
+      const stop = async () => {
+        if (stopping) {
+          return;
+        }
+
+        stopping = true;
+        await app.stop();
+      };
+
+      process.once('SIGINT', () => {
+        stop().catch(console.error);
+      });
+      process.once('SIGTERM', () => {
+        stop().catch(console.error);
+      });
+    })
+    .catch(err => {
+      console.error('Cannot start the application.', err);
+      process.exit(1);
+    });
 }

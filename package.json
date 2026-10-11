@@ -9,6 +9,8 @@
     "start:mobile": "pnpm --dir apps/mobile-client start",
     "start:mobile:web": "pnpm --dir apps/mobile-client start:web",
     "build:api": "pnpm --dir apps/api build",
+    "worker:example": "pnpm --dir apps/api worker:example",
+    "worker:install": "pnpm --dir apps/api worker:install",
     "build:web": "pnpm --dir apps/web-client build",
     "build:mobile": "pnpm --dir apps/mobile-client build",
     "lint": "pnpm --dir apps/api lint && pnpm --dir apps/web-client lint && pnpm --dir apps/mobile-client lint",

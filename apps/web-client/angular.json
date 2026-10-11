@@ -67,7 +67,8 @@
           },
           "defaultConfiguration": "development",
           "options": {
-            "proxyConfig": "proxy.conf.mjs"
+            "proxyConfig": "proxy.conf.mjs",
+            "prebundle": false
           }
         },
         "test": {
