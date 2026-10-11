@@ -6,3 +6,4 @@ export * from './oauth-callback.service';
 export * from './session-exchange.service';
 export * from './login-rate-limit.service';
 export * from './github-webhook.service';
+export * from './worker.service';

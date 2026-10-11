@@ -1,6 +1,8 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'session_service.dart';
+import 'theme.dart';
+import 'workspace_shell.dart';
 
 void main() => runApp(const MyApp());
 
@@ -10,9 +12,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: 'Relay',
-    theme: ThemeData(
-      colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-    ),
+    theme: RelayTokens.theme,
     home: const SessionPage(),
   );
 }
@@ -75,33 +75,128 @@ class _SessionPageState extends State<SessionPage> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Relay')),
-    body: SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (_busy)
-            const CircularProgressIndicator()
-          else if (_profile != null) ...[
-            SelectableText(
-              const JsonEncoder.withIndent('  ').convert(_profile),
+  Widget build(BuildContext context) {
+    final profile = _profile;
+
+    if (profile != null) {
+      return WorkspaceShell(
+        profile: profile,
+        onSignOut: _logout,
+        busy: _busy,
+        error: _error,
+      );
+    }
+
+    return Scaffold(
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(
+              horizontal: RelayTokens.medium,
+              vertical: RelayTokens.large,
             ),
-            const SizedBox(height: 16),
-            FilledButton(onPressed: _logout, child: const Text('Sign out')),
-          ] else
-            FilledButton(
-              onPressed: _login,
-              child: const Text('Continue with GitHub'),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                minHeight: (constraints.maxHeight - RelayTokens.large * 2)
+                    .clamp(0, double.infinity),
+              ),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    maxWidth: RelayTokens.contentWidth,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 80,
+                          height: 80,
+                          decoration: BoxDecoration(
+                            color: RelayTokens.logo,
+                            borderRadius: BorderRadius.circular(
+                              RelayTokens.radius,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: RelayTokens.medium),
+                      const Text(
+                        'RELAY',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: RelayTokens.primary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 3,
+                        ),
+                      ),
+                      const SizedBox(height: RelayTokens.small),
+                      Text(
+                        'Log in to Relay',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 32,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: -1,
+                        ),
+                      ),
+                      const SizedBox(height: RelayTokens.large),
+                      FilledButton(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: RelayTokens.text,
+                          foregroundColor: RelayTokens.buttonText,
+                        ),
+                        onPressed: _busy ? null : _login,
+                        child: Wrap(
+                          alignment: WrapAlignment.center,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          spacing: RelayTokens.small,
+                          children: [
+                            if (_busy) ...[
+                              const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                            ] else
+                              SvgPicture.asset(
+                                'assets/github.svg',
+                                width: 22,
+                                height: 22,
+                                excludeFromSemantics: true,
+                              ),
+                            Text(
+                              _busy ? 'Connecting…' : 'Continue with GitHub',
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (_error != null)
+                        Padding(
+                          padding: const EdgeInsets.only(
+                            top: RelayTokens.medium,
+                          ),
+                          child: Semantics(
+                            liveRegion: true,
+                            child: Text(
+                              _error!,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(color: RelayTokens.error),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
             ),
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 16),
-              child: Text(_error!),
-            ),
-        ],
+          ),
+        ),
       ),
-    ),
-  );
+    );
+  }
 }

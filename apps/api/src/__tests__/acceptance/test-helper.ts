@@ -6,6 +6,7 @@ import {
 } from '@loopback/testlab';
 import path from 'path';
 import {POSTGRES_CONFIG_BINDING_KEY} from '../../datasources/postgres.datasource';
+import {WORKER_SERVICE_OPTIONS_BINDING_KEY} from '../../services/worker.service';
 
 const testPostgresConfig = {
   name: 'postgres',
@@ -15,7 +16,9 @@ const testPostgresConfig = {
     'postgres://postgres:postgres@localhost/relay_test',
 };
 
-export async function setupApplication(): Promise<AppWithClient> {
+export async function setupApplication(
+  options: {workers?: boolean} = {},
+): Promise<AppWithClient> {
   const restConfig = givenHttpServerConfig({
     // Customize the server configuration here.
     // Empty values (undefined, '') will be ignored by the helper.
@@ -31,6 +34,9 @@ export async function setupApplication(): Promise<AppWithClient> {
   app.projectRoot = path.resolve(__dirname, '../../../dist');
 
   app.bind(POSTGRES_CONFIG_BINDING_KEY).to(testPostgresConfig);
+  app
+    .bind(WORKER_SERVICE_OPTIONS_BINDING_KEY)
+    .to({enabled: options.workers ?? false});
 
   await app.boot();
   await app.start();

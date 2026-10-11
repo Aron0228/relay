@@ -1,0 +1,117 @@
+:host {
+  display: block;
+}
+
+main {
+  min-height: 100svh;
+  display: grid;
+  place-items: center;
+  padding: var(--space-large) var(--space-medium);
+}
+
+.session-panel {
+  width: 100%;
+  max-width: var(--content-width);
+  text-align: center;
+}
+
+.logo-placeholder {
+  width: 80px;
+  height: 80px;
+  margin: 0 auto var(--space-medium);
+  border-radius: var(--radius-small);
+  background: var(--color-logo);
+}
+
+.eyebrow {
+  margin: 0 0 var(--space-small);
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 3px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 32px;
+  font-weight: 650;
+  letter-spacing: -1px;
+}
+
+button {
+  margin-top: var(--space-large);
+  width: 100%;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-small);
+  padding: 14px var(--space-medium);
+  border: 1px solid transparent;
+  border-radius: var(--radius-small);
+  background: var(--color-button);
+  color: var(--color-button-text);
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 150ms,
+    transform 150ms;
+}
+
+button:hover:not(:disabled) {
+  background: var(--color-button-hover);
+  transform: translateY(-1px);
+}
+button:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 4px;
+}
+button:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+.error {
+  color: var(--color-error);
+  margin: var(--space-medium) 0 0;
+  line-height: 1.5;
+}
+
+pre {
+  padding: var(--space-medium);
+  margin: 0 0 var(--space-medium);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  background: var(--color-surface);
+  overflow: auto;
+  text-align: left;
+  font-size: 13px;
+}
+
+.spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--color-primary);
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  button {
+    transition: none;
+  }
+  .spinner {
+    animation: none;
+  }
+}

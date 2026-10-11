@@ -36,6 +36,8 @@ dependencies:
   cupertino_icons: ^2.0.0
   http: ^1.6.0
   flutter_web_auth_2: ^6.0.0-alpha.8
+  flutter_svg: ^2.3.0
+  lucide_icons_flutter: ^3.1.24
 
 dev_dependencies:
   flutter_test:
@@ -58,6 +60,9 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  assets:
+    - assets/github.svg
 
   # To add assets to your application, add an assets section, like this:
   # assets:
