@@ -1,5 +1,19 @@
-import {Browser, BrowserContext, CDPSession, chromium, Page} from 'playwright';
+import {allowedOrigins} from '../ai/config';
+import {
+  Browser,
+  BrowserContext,
+  CDPSession,
+  chromium,
+  Page,
+  Locator,
+} from 'playwright';
 import {WorkerInput, WorkerMessage} from './protocol';
+
+export interface BrowserLocator {
+  selector?: string;
+  role?: string;
+  name?: string;
+}
 
 export class PlaywrightInterface {
   private browser?: Browser;
@@ -27,7 +41,45 @@ export class PlaywrightInterface {
         size: {width: 1280, height: 720},
       },
     });
+
     this.page = await this.context.newPage();
+    if (this.input.agentInput) {
+      const origins = allowedOrigins();
+      const protectNavigation = async (page: Page) => {
+        const session = await this.context!.newCDPSession(page);
+
+        session.on(
+          'Fetch.requestPaused',
+          ({
+            requestId,
+            request,
+          }: {
+            requestId: string;
+            request: {url: string};
+          }) => {
+            const approved = origins.includes(new URL(request.url).origin);
+            const command = approved
+              ? 'Fetch.continueRequest'
+              : 'Fetch.failRequest';
+            const parameters = approved
+              ? {requestId}
+              : {requestId, errorReason: 'BlockedByClient'};
+
+            session.send(command, parameters).catch(() => {});
+          },
+        );
+
+        await session.send('Fetch.enable', {
+          patterns: [{resourceType: 'Document', requestStage: 'Request'}],
+        });
+      };
+
+      await protectNavigation(this.page);
+      this.context.on('page', page => {
+        protectNavigation(page).catch(() => page.close());
+      });
+    }
+
     this.page.setDefaultTimeout(10000);
     this.page.on('console', message =>
       this.event('browser.console', {
@@ -76,30 +128,49 @@ export class PlaywrightInterface {
     );
   }
 
-  async fill(selector: string, value: string): Promise<void> {
+  async fill(selector: string | BrowserLocator, value: string): Promise<void> {
     await this.perform('fill', {selector, value}, () =>
-      this.getPage().locator(selector).fill(value),
+      this.locator(selector).fill(value),
     );
   }
 
-  async click(selector: string): Promise<void> {
+  async click(selector: string | BrowserLocator): Promise<void> {
     await this.perform('click', {selector}, () =>
-      this.getPage().locator(selector).click(),
+      this.locator(selector).click(),
     );
   }
 
-  async press(selector: string, key: string): Promise<void> {
+  async press(selector: string | BrowserLocator, key: string): Promise<void> {
     await this.perform('press', {selector, key}, () =>
-      this.getPage().locator(selector).press(key),
+      this.locator(selector).press(key),
     );
   }
 
-  async text(selector: string): Promise<string> {
-    return this.getPage().locator(selector).innerText();
+  async text(selector: string | BrowserLocator): Promise<string> {
+    return this.locator(selector).innerText();
   }
 
   async snapshot(): Promise<string> {
     return this.getPage().locator('body').ariaSnapshot();
+  }
+
+  async observe(): Promise<string> {
+    return `URL: ${this.getPage().url()}\n${await this.snapshot()}`;
+  }
+
+  private locator(target: string | BrowserLocator): Locator {
+    if (typeof target === 'string') {
+      return this.getPage().locator(target);
+    }
+
+    if (target.selector) {
+      return this.getPage().locator(target.selector);
+    }
+
+    return this.getPage().getByRole(
+      target.role as Parameters<Page['getByRole']>[0],
+      {name: target.name, exact: true},
+    );
   }
 
   async assertText(selector: string, expected: string): Promise<void> {

@@ -56,6 +56,76 @@ export class RunController {
     };
   }
 
+  @post('/api/runs/agent', {
+    responses: {'202': {description: 'Agent run queued'}},
+  })
+  @authenticate('session')
+  async createAgent(
+    @requestBody({
+      required: true,
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            required: ['prompt'],
+            additionalProperties: false,
+            properties: {
+              prompt: {type: 'string', minLength: 1, maxLength: 4000},
+              targetUrl: {type: 'string', format: 'uri', maxLength: 2000},
+            },
+          },
+        },
+      },
+    })
+    body: {prompt: string; targetUrl?: string},
+    @inject(SecurityBindings.USER) user: UserProfile,
+  ): Promise<object> {
+    const {run, viewToken} = await this.workers.create(
+      WORKER_SCRIPT.Agent,
+      user[securityId],
+      {
+        prompt: body.prompt,
+        targetUrl: body.targetUrl ?? 'https://academybugs.com/',
+      },
+    );
+
+    this.response.status(202);
+    this.response.setHeader('Cache-Control', 'no-store');
+
+    return {
+      ...this.publicRun(run),
+      activityUrl: `/api/runs/${run.id}/activity`,
+      resultUrl: `/api/runs/${run.id}/result`,
+      streamUrl: `/api/runs/${run.id}/stream?token=${viewToken}`,
+      videoUrl: `/api/runs/${run.id}/video?token=${viewToken}`,
+    };
+  }
+
+  @get('/api/runs/{id}/result')
+  @authenticate('session')
+  async result(
+    @param.path.string('id', {schema: {format: 'uuid'}}) id: string,
+    @inject(SecurityBindings.USER) user: UserProfile,
+  ) {
+    await this.workers.getOwned(id, user[securityId]);
+
+    return this.workers.getResult(id);
+  }
+
+  @get('/api/runs/{id}/activity')
+  @authenticate('session')
+  async activity(
+    @param.path.string('id', {schema: {format: 'uuid'}}) id: string,
+    @inject(SecurityBindings.USER) user: UserProfile,
+    @param.query.number('after', {schema: {type: 'integer', minimum: 0}})
+    after = 0,
+  ): Promise<Response> {
+    await this.workers.getOwned(id, user[securityId]);
+    await this.workers.activity(id, this.response, after);
+
+    return this.response;
+  }
+
   @get('/api/runs/{id}')
   @authenticate('session')
   async get(

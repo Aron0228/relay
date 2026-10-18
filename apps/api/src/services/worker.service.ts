@@ -1,6 +1,9 @@
 import {BindingScope, inject, lifeCycleObserver} from '@loopback/core';
-import {repository} from '@loopback/repository';
+import {IsolationLevel, repository} from '@loopback/repository';
 import {HttpErrors, Response} from '@loopback/rest';
+import {AgentInput, AgentResult, AGENT_VERDICT} from '../ai/types';
+import {approvedUrl, allowedOrigins, positiveInteger} from '../ai/config';
+import {AGENT_PROMPT_VERSION} from '../ai/system-prompt';
 import {Job, Queue, Worker} from 'bullmq';
 import Redis from 'ioredis';
 import {fork} from 'node:child_process';
@@ -13,7 +16,11 @@ import {
 import {access} from 'node:fs/promises';
 import path from 'node:path';
 import {isRunFinished, Run, RUN_STATUS} from '../models';
-import {RunEventRepository, RunRepository} from '../repositories';
+import {
+  RunEventRepository,
+  RunRepository,
+  RunResultRepository,
+} from '../repositories';
 import {
   WorkerMessage,
   WorkerResult,
@@ -22,7 +29,8 @@ import {
 } from '../workers/protocol';
 
 export const WORKER_SERVICE_BINDING_KEY = 'services.WorkerService';
-export const WORKER_SERVICE_OPTIONS_BINDING_KEY = 'services.WorkerService.options';
+export const WORKER_SERVICE_OPTIONS_BINDING_KEY =
+  'services.WorkerService.options';
 
 export interface WorkerServiceOptions {
   enabled?: boolean;
@@ -60,6 +68,7 @@ export class WorkerService {
   constructor(
     @repository(RunRepository) private runs: RunRepository,
     @repository(RunEventRepository) private events: RunEventRepository,
+    @repository(RunResultRepository) private results: RunResultRepository,
     @inject(WORKER_SERVICE_OPTIONS_BINDING_KEY, {optional: true})
     private options: WorkerServiceOptions = {},
   ) {
@@ -86,6 +95,7 @@ export class WorkerService {
   async create(
     scriptName: WorkerScriptName,
     userId?: string,
+    agentInput?: AgentInput,
   ): Promise<{run: Run; viewToken: string}> {
     if (this.stopping) {
       throw new HttpErrors.ServiceUnavailable(
@@ -97,6 +107,25 @@ export class WorkerService {
       throw new HttpErrors.BadRequest('Unknown worker script');
     }
 
+    if (scriptName === WORKER_SCRIPT.Agent) {
+      if (!agentInput?.prompt.trim() || agentInput.prompt.length > 4000) {
+        throw new HttpErrors.BadRequest(
+          'An agent prompt of 1 to 4000 characters is required',
+        );
+      }
+
+      try {
+        agentInput = {
+          ...agentInput,
+          targetUrl: approvedUrl(agentInput.targetUrl, allowedOrigins()),
+        };
+      } catch {
+        throw new HttpErrors.BadRequest(
+          'The target URL must use an approved origin',
+        );
+      }
+    }
+
     await this.initialize();
 
     const viewToken = randomBytes(32).toString('hex');
@@ -104,6 +133,7 @@ export class WorkerService {
       id: randomUUID(),
       userId,
       scriptName,
+      agentInput,
       status: RUN_STATUS.Queued,
       viewTokenHash: this.hash(viewToken),
       cancelRequested: false,
@@ -173,23 +203,86 @@ export class WorkerService {
     await this.initialize();
     await this.publisher!.publish(this.cancelChannel, id);
 
-    const queued = await this.runs.updateAll(
-      {status: RUN_STATUS.Cancelled, endedAt: new Date()},
-      {id, status: RUN_STATUS.Queued},
-    );
+    const run = await this.runs.findById(id);
 
-    if (queued.count) {
-      await this.event(id, 'run.cancelled', {});
-      await this.publisher!.publish(this.frameChannel(id), 'end');
+    if (run.status === RUN_STATUS.Queued) {
+      await this.finish(id, {status: RUN_STATUS.Cancelled}, true);
     }
   }
 
-  async listEvents(id: string) {
+  async getResult(id: string) {
+    return this.results.findOne({where: {runId: id}});
+  }
+
+  async listEvents(id: string, after = 0) {
     return this.events.find({
-      where: {runId: id},
+      where: {runId: id, sequence: {gt: after}},
       order: ['sequence ASC'],
       limit: 1000,
     });
+  }
+
+  async activity(id: string, response: Response, after = 0): Promise<void> {
+    let closed = false;
+    const close = () => {
+      if (closed) {
+        return;
+      }
+
+      closed = true;
+      this.streams.delete(close);
+      response.end();
+    };
+
+    response.on('close', close);
+    this.streams.add(close);
+    response.setHeader('Content-Type', 'text/event-stream');
+    response.setHeader('Cache-Control', 'no-store');
+    response.setHeader('X-Accel-Buffering', 'no');
+    response.flushHeaders();
+
+    try {
+      while (!closed) {
+        const events = await this.listEvents(id, after);
+
+        for (const event of events) {
+          if (closed) {
+            break;
+          }
+
+          const ready = response.write(
+            `id: ${event.sequence}\nevent: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`,
+          );
+          after = event.sequence;
+
+          if (!ready) {
+            await new Promise<void>(resolve => {
+              const resume = () => {
+                response.off('drain', resume);
+                response.off('close', resume);
+                resolve();
+              };
+
+              response.once('drain', resume);
+              response.once('close', resume);
+            });
+          }
+        }
+
+        if (
+          !events.length &&
+          isRunFinished((await this.runs.findById(id)).status)
+        ) {
+          break;
+        }
+
+        if (!closed) {
+          await new Promise(resolve => setTimeout(resolve, 250));
+        }
+      }
+    } finally {
+      close();
+    }
   }
 
   videoPath(id: string): string {
@@ -368,10 +461,15 @@ export class WorkerService {
 
     this.cancellations.set(id, terminate);
 
-    const timeout = setTimeout(() => {
-      timedOut = true;
-      terminate();
-    }, this.timeoutMs);
+    const timeout = setTimeout(
+      () => {
+        timedOut = true;
+        terminate();
+      },
+      run.agentInput
+        ? positiveInteger('AI_RUN_TIMEOUT_SECONDS', 180) * 1000
+        : this.timeoutMs,
+    );
 
     child.on('message', (message: WorkerMessage) => {
       if (message.type === 'event') {
@@ -420,6 +518,7 @@ export class WorkerService {
         input: {
           runId: id,
           scriptName: run.scriptName as WorkerScriptName,
+          agentInput: run.agentInput,
           videoDirectory: path.dirname(this.videoPath(id)),
           exampleUrl: this.exampleUrl,
           actionDelayMs: this.actionDelayMs,
@@ -473,7 +572,11 @@ export class WorkerService {
     }
   }
 
-  private async finish(id: string, result: WorkerResult): Promise<void> {
+  private async finish(
+    id: string,
+    result: WorkerResult,
+    queuedOnly = false,
+  ): Promise<void> {
     let videoFile = result.videoFile;
 
     if (!videoFile) {
@@ -485,21 +588,93 @@ export class WorkerService {
       }
     }
 
-    const {count} = await this.runs.updateAll(
-      {
-        status: result.status,
-        endedAt: new Date(),
-        error: result.error ?? null,
-        videoFile: videoFile ?? null,
-      },
-      {id, status: {inq: [RUN_STATUS.Queued, RUN_STATUS.Running]}},
+    const transaction = await this.runs.beginTransaction(
+      IsolationLevel.READ_COMMITTED,
     );
+    const options = {transaction};
+
+    let count = 0;
+
+    try {
+      const updated = await this.runs.updateAll(
+        {
+          status: result.status,
+          endedAt: new Date(),
+          error: result.error ?? null,
+          videoFile: videoFile ?? null,
+        },
+        {
+          id,
+          status: {
+            inq: queuedOnly
+              ? [RUN_STATUS.Queued]
+              : [RUN_STATUS.Queued, RUN_STATUS.Running],
+          },
+        },
+        options,
+      );
+
+      count = updated.count;
+
+      if (count) {
+        const run = await this.runs.findById(id, undefined, options);
+
+        if (run.agentInput) {
+          const agentResult: AgentResult = result.agentResult ?? {
+            verdict: AGENT_VERDICT.Inconclusive,
+            summary: result.error ?? `Run ${result.status}`,
+            confidence: 0,
+            steps: [],
+            observations: [],
+            stopReason:
+              result.status === RUN_STATUS.Cancelled
+                ? 'cancelled'
+                : 'provider_error',
+            turns: 0,
+            toolCalls: 0,
+            model: process.env.AI_MODEL ?? 'qwen3:8b',
+            promptVersion: AGENT_PROMPT_VERSION,
+          };
+
+          if (
+            result.status === RUN_STATUS.Cancelled ||
+            result.error === 'Worker execution timed out'
+          ) {
+            agentResult.verdict = AGENT_VERDICT.Inconclusive;
+            agentResult.confidence = 0;
+            agentResult.stopReason =
+              result.status === RUN_STATUS.Cancelled ? 'cancelled' : 'timeout';
+            agentResult.summary = result.error ?? 'Run cancelled';
+          }
+
+          await this.results.create(
+            {
+              runId: id,
+              status: agentResult.verdict,
+              confidence: agentResult.confidence,
+              result: agentResult,
+            },
+            options,
+          );
+        }
+
+        await this.events.create(
+          {
+            runId: id,
+            type: `run.${result.status}`,
+            payload: {error: result.error, videoFile},
+          },
+          options,
+        );
+      }
+
+      await transaction.commit();
+    } catch (error) {
+      await transaction.rollback();
+      throw error;
+    }
 
     if (count) {
-      await this.event(id, `run.${result.status}`, {
-        error: result.error,
-        videoFile,
-      });
       await this.publisher?.del(this.frameKey(id));
       await this.publisher?.publish(this.frameChannel(id), 'end');
     }

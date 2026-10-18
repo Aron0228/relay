@@ -1,3 +1,4 @@
+import {AgentInput} from '../../ai/types';
 import {Entity, model, property} from '@loopback/repository';
 
 export const RUN_STATUS = {
@@ -38,6 +39,12 @@ export class Run extends Entity {
     postgresql: {columnName: 'script_name', dataType: 'text'},
   })
   scriptName!: string;
+
+  @property({
+    type: 'object',
+    postgresql: {columnName: 'agent_input', dataType: 'jsonb'},
+  })
+  agentInput?: AgentInput;
 
   @property({
     type: 'string',

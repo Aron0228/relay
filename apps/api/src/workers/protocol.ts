@@ -1,4 +1,9 @@
-export const WORKER_SCRIPT = {ExampleTodo: 'example-todo'} as const;
+import {AgentInput, AgentResult} from '../ai/types';
+
+export const WORKER_SCRIPT = {
+  ExampleTodo: 'example-todo',
+  Agent: 'agent',
+} as const;
 export type WorkerScriptName =
   (typeof WORKER_SCRIPT)[keyof typeof WORKER_SCRIPT];
 
@@ -8,6 +13,7 @@ export interface WorkerInput {
   videoDirectory: string;
   exampleUrl: string;
   actionDelayMs: number;
+  agentInput?: AgentInput;
 }
 
 export type WorkerCommand =
@@ -17,6 +23,7 @@ export interface WorkerResult {
   status: 'completed' | 'failed' | 'cancelled';
   videoFile?: string;
   error?: string;
+  agentResult?: AgentResult;
 }
 
 export type WorkerMessage =

@@ -1,3 +1,5 @@
+import {BrowserAgent} from '../ai/browser-agent';
+import {OpenAiCompatibleProvider} from '../ai/openai-compatible.provider';
 import {mkdir} from 'node:fs/promises';
 import {PlaywrightInterface} from './playwright.interface';
 import {
@@ -12,6 +14,7 @@ import {exampleTodo} from './scripts/example-todo';
 let browser: PlaywrightInterface | undefined;
 let cancelled = false;
 let started = false;
+const cancellation = new AbortController();
 
 function emit(message: WorkerMessage): void {
   if (process.connected) {
@@ -21,6 +24,8 @@ function emit(message: WorkerMessage): void {
 
 async function cancel(): Promise<void> {
   cancelled = true;
+  cancellation.abort();
+
   await browser?.cancel();
 }
 
@@ -36,11 +41,33 @@ async function execute(input: WorkerInput): Promise<void> {
       throw new Error('Run cancelled');
     }
 
-    if (input.scriptName !== WORKER_SCRIPT.ExampleTodo) {
+    if (input.scriptName === WORKER_SCRIPT.Agent) {
+      if (!input.agentInput) {
+        throw new Error('Agent input is required');
+      }
+
+      const agent = new BrowserAgent(
+        new OpenAiCompatibleProvider(),
+        browser,
+        (event, payload) => emit({type: 'event', event, payload}),
+      );
+
+      result.agentResult = await agent.run(
+        input.agentInput,
+        cancellation.signal,
+      );
+
+      if (
+        ['provider_error', 'timeout'].includes(result.agentResult.stopReason)
+      ) {
+        result.status = 'failed';
+        result.error = result.agentResult.summary;
+      }
+    } else if (input.scriptName === WORKER_SCRIPT.ExampleTodo) {
+      await exampleTodo(browser, input.exampleUrl);
+    } else {
       throw new Error('Unknown worker script');
     }
-
-    await exampleTodo(browser, input.exampleUrl);
   } catch (error) {
     result.status = cancelled ? 'cancelled' : 'failed';
     result.error = cancelled ? undefined : (error as Error).message;
