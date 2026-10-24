@@ -113,8 +113,8 @@ importers:
         specifier: ^22.1.0
         version: 22.1.6(@angular/compiler@22.1.6)(rxjs@7.8.2)
       '@angular/forms':
-        specifier: ^22.1.0
-        version: 22.1.6(@angular/common@22.1.6(@angular/core@22.1.6(@angular/compiler@22.1.6)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@22.1.6(@angular/compiler@22.1.6)(rxjs@7.8.2))(@angular/platform-browser@22.1.6(@angular/common@22.1.6(@angular/core@22.1.6(@angular/compiler@22.1.6)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@22.1.6(@angular/compiler@22.1.6)(rxjs@7.8.2)))(rxjs@7.8.2)
+        specifier: ^22.2.3
+        version: 22.2.3(@angular/common@22.1.6(@angular/core@22.1.6(@angular/compiler@22.1.6)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@22.1.6(@angular/compiler@22.1.6)(rxjs@7.8.2))(@angular/platform-browser@22.1.6(@angular/common@22.1.6(@angular/core@22.1.6(@angular/compiler@22.1.6)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@22.1.6(@angular/compiler@22.1.6)(rxjs@7.8.2)))(rxjs@7.8.2)
       '@angular/platform-browser':
         specifier: ^22.1.0
         version: 22.1.6(@angular/common@22.1.6(@angular/core@22.1.6(@angular/compiler@22.1.6)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@22.1.6(@angular/compiler@22.1.6)(rxjs@7.8.2))
@@ -325,13 +325,13 @@ packages:
       zone.js:
         optional: true
 
-  '@angular/forms@22.1.6':
-    resolution: {integrity: sha512-rfV4G4UB4l69yXSRvhaHPzTMIruvBlRO+ak9NtTcYMnsoj8O5ZCyPv0ledGIrLTBwGSI3X1j4nr9aoV+Rj/n+Q==}
+  '@angular/forms@22.2.3':
+    resolution: {integrity: sha512-TKP8FpeRCY/++vKWsY8GC1J2sNtEkdNNBPdgnMAMLTwheW5JzjwVatuQlbuZEx3WaAjbll1Ux3d+eHeqAVrtQg==}
     engines: {node: ^22.22.3 || ^24.15.0 || >=26.0.0}
     peerDependencies:
-      '@angular/common': 22.1.6
-      '@angular/core': 22.1.6
-      '@angular/platform-browser': 22.1.6
+      '@angular/common': 22.2.3
+      '@angular/core': 22.2.3
+      '@angular/platform-browser': 22.2.3
       rxjs: ^6.5.3 || ^7.4.0
 
   '@angular/platform-browser@22.1.6':
@@ -2528,6 +2528,7 @@ packages:
   cron-parser@4.9.0:
     resolution: {integrity: sha512-p0SaNjrHOnQeR8/VnfGbmg9te2kfyYSQ7Sc/j/6DtPL3JQvKxmjO9TSjNFpujqV3vEYYBvNNvXSxzyksBWAx1Q==}
     engines: {node: '>=12.0.0'}
+    deprecated: v4 is no longer maintained, upgrade to v5
 
   cross-spawn@7.0.6:
     resolution: {integrity: sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==}
@@ -2567,6 +2568,7 @@ packages:
   db-migrate@0.11.14:
     resolution: {integrity: sha512-8e+/YsIlM3d69hj+cb6qG6WyubR8nwXfDf9gGLWl4AxHpI6mTomcqhRLNfPrs7Le7AZv2eEsgK8hkXDSQqfIvg==}
     engines: {node: '>=8.0.0'}
+    deprecated: 0.x is end of life, please upgrade to db-migrate 1.0
     hasBin: true
 
   debug@2.6.9:
@@ -5005,11 +5007,11 @@ packages:
   zod@4.4.3:
     resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
 
-  zod@4.6.4:
-    resolution: {integrity: sha512-AXSD6hvGdvRjajG/l1cC+d6IrhH+sjmPKtYeQdJIK8MFJl3LyClzS+o/YsVC+zQZPupAaeH5skwwm8YqYH7BqA==}
-
   zod@4.6.6:
     resolution: {integrity: sha512-4UmzQUF5fxvfcYHlbjBmejU+w+hbDnWFx4aS8kBx7nPBHcO2SqPbpAG8snbdg+Xse4pRefR98hgjFgIMCI/UhA==}
+
+  zod@4.6.7:
+    resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
 
 snapshots:
 
@@ -5215,7 +5217,7 @@ snapshots:
     optionalDependencies:
       '@angular/compiler': 22.1.6
 
-  '@angular/forms@22.1.6(@angular/common@22.1.6(@angular/core@22.1.6(@angular/compiler@22.1.6)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@22.1.6(@angular/compiler@22.1.6)(rxjs@7.8.2))(@angular/platform-browser@22.1.6(@angular/common@22.1.6(@angular/core@22.1.6(@angular/compiler@22.1.6)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@22.1.6(@angular/compiler@22.1.6)(rxjs@7.8.2)))(rxjs@7.8.2)':
+  '@angular/forms@22.2.3(@angular/common@22.1.6(@angular/core@22.1.6(@angular/compiler@22.1.6)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@22.1.6(@angular/compiler@22.1.6)(rxjs@7.8.2))(@angular/platform-browser@22.1.6(@angular/common@22.1.6(@angular/core@22.1.6(@angular/compiler@22.1.6)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@22.1.6(@angular/compiler@22.1.6)(rxjs@7.8.2)))(rxjs@7.8.2)':
     dependencies:
       '@angular/common': 22.1.6(@angular/core@22.1.6(@angular/compiler@22.1.6)(rxjs@7.8.2))(rxjs@7.8.2)
       '@angular/core': 22.1.6(@angular/compiler@22.1.6)(rxjs@7.8.2)
@@ -5223,7 +5225,7 @@ snapshots:
       '@standard-schema/spec': 1.1.0
       rxjs: 7.8.2
       tslib: 2.8.1
-      zod: 4.6.4
+      zod: 4.6.7
 
   '@angular/platform-browser@22.1.6(@angular/common@22.1.6(@angular/core@22.1.6(@angular/compiler@22.1.6)(rxjs@7.8.2))(rxjs@7.8.2))(@angular/core@22.1.6(@angular/compiler@22.1.6)(rxjs@7.8.2))':
     dependencies:
@@ -10259,6 +10261,6 @@ snapshots:
 
   zod@4.4.3: {}
 
-  zod@4.6.4: {}
-
   zod@4.6.6: {}
+
+  zod@4.6.7: {}
