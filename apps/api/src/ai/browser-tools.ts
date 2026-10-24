@@ -1,7 +1,7 @@
 import {z} from 'zod';
 import {PlaywrightInterface} from '../workers/playwright.interface';
 import {approvedUrl} from './config';
-import {AgentTool} from './types';
+import {AgentTool, AGENT_ACTIVITY_KIND} from './types';
 
 const locatorSchema = z
   .object({
@@ -56,6 +56,19 @@ export function parseTextVerdict(content: string | null) {
 }
 
 const tools = {
+  reportProgress: {
+    description:
+      'Keep the user informed: report the initial test plan after inspecting the page, then meaningful progress, findings, or a change of approach. Use message for a short plan/update and observation for an observed fact. Write 1-2 natural sentences about the test goal, not tool mechanics or private reasoning. Group related actions rather than narrating every click. Then continue testing.',
+    schema: z
+      .object({
+        kind: z.enum([
+          AGENT_ACTIVITY_KIND.Message,
+          AGENT_ACTIVITY_KIND.Observation,
+        ]),
+        text: z.string().min(1).max(2000),
+      })
+      .strict(),
+  },
   browserSnapshot: {
     description: 'Inspect the current URL and accessibility tree.',
     schema: z.object({}).strict(),
@@ -112,6 +125,9 @@ export class BrowserTools {
     const parsed = JSON.parse(rawArguments) as unknown;
 
     switch (name) {
+      case 'reportProgress':
+        return {activity: tools.reportProgress.schema.parse(parsed)};
+
       case 'browserSnapshot':
         tools.browserSnapshot.schema.parse(parsed);
 

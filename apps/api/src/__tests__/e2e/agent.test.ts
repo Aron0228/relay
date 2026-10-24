@@ -63,7 +63,9 @@ describe('AI browser workers (e2e)', () => {
       const name =
         mode === 'limit'
           ? 'browserSnapshot'
-          : ['browserFill', 'browserPress', 'finish'][providerCalls - 1];
+          : ['reportProgress', 'browserFill', 'browserPress', 'finish'][
+              providerCalls - 1
+            ];
       const args =
         name === 'finish'
           ? {
@@ -77,7 +79,12 @@ describe('AI browser workers (e2e)', () => {
             ? {selector: '.new-todo', value: 'Finn explores the Candy Kingdom'}
             : name === 'browserPress'
               ? {selector: '.new-todo', key: 'Enter'}
-              : {};
+              : name === 'reportProgress'
+                ? {
+                    kind: 'message',
+                    text: 'Finn is checking the Candy Kingdom shop.',
+                  }
+                : {};
 
       response.setHeader('Content-Type', 'application/json');
       response.end(
@@ -108,7 +115,7 @@ describe('AI browser workers (e2e)', () => {
 
     vi.stubEnv('AI_BASE_URL', `http://127.0.0.1:${providerAddress.port}/v1`);
     vi.stubEnv('AI_MODEL', 'bmo-test');
-    vi.stubEnv('AI_MAX_TOOL_CALLS', '3');
+    vi.stubEnv('AI_MAX_TOOL_CALLS', '5');
     await new Promise<void>(resolve => site.listen(0, '127.0.0.1', resolve));
 
     const address = site.address() as {port: number};
@@ -248,6 +255,84 @@ describe('AI browser workers (e2e)', () => {
     expect((await workers.getResult(failed.id))?.status).toBe('inconclusive');
   }, 30000);
 
+  it('lists only owned runs, searches goals and uses stable pagination', async () => {
+    const createdAt = new Date();
+
+    for (let index = 0; index < 27; index++) {
+      const id = randomUUID();
+      runIds.push(id);
+      await runs.create({
+        id,
+        userId: user.id,
+        scriptName: 'agent',
+        agentInput: {
+          prompt: `Candy pagination ${index}`,
+          targetUrl: 'https://academybugs.com/',
+        },
+        status: 'queued',
+        viewTokenHash: '0'.repeat(64),
+        cancelRequested: false,
+        createdAt,
+      });
+    }
+
+    const first = await client
+      .get('/api/runs?search=Candy%20pagination')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    const second = await client
+      .get(
+        `/api/runs?search=Candy%20pagination&before=${first.body.nextCursor}`,
+      )
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(first.body.items).toHaveLength(25);
+    expect(second.body.items).toHaveLength(2);
+    expect(
+      new Set(
+        [...first.body.items, ...second.body.items].map(
+          (run: {id: string}) => run.id,
+        ),
+      ).size,
+    ).toBe(27);
+    expect(second.body.nextCursor).toBeNull();
+    expect(first.body.items[0].viewTokenHash).toBeUndefined();
+    await client.get('/api/runs').expect(401);
+    await client.get(`/api/runs/${runIds.at(-1)}/media/video`).expect(401);
+    await client
+      .get('/api/runs?scope=unknown')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(400);
+
+    const stranger = await runs.create({
+      id: randomUUID(),
+      scriptName: 'agent',
+      status: 'queued',
+      viewTokenHash: '0'.repeat(64),
+      cancelRequested: false,
+    });
+    runIds.push(stranger.id);
+    const page = await client
+      .get(`/api/runs?search=${stranger.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(page.body.items).toHaveLength(0);
+    await client
+      .get(`/api/runs/${stranger.id}/media/stream`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(404);
+    await client
+      .get(`/api/runs/${stranger.id}/activity`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(404);
+    await client
+      .get(`/api/runs?before=${stranger.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(404);
+  });
+
   it('executes tool calls, persists a verdict and video, and replays activity', async () => {
     providerCalls = 0;
     const run = await createRun();
@@ -266,9 +351,11 @@ describe('AI browser workers (e2e)', () => {
       verdict: 'passed',
       stopReason: 'finished',
       model: 'bmo-test',
-      toolCalls: 3,
+      toolCalls: 4,
     });
     expect(text).toContain('event: agent.tool_completed');
+    expect(text).toContain('event: agent.activity');
+    expect(text).toContain('Finn is checking the Candy Kingdom shop.');
     expect(text).toContain('event: run.completed');
     expect(text).toContain('Finn explores the Candy Kingdom');
     await client
@@ -290,7 +377,7 @@ describe('AI browser workers (e2e)', () => {
     expect((await workers.getResult(run.id))?.result).toMatchObject({
       verdict: 'inconclusive',
       stopReason: 'tool_limit',
-      toolCalls: 3,
+      toolCalls: 5,
     });
   }, 30000);
 

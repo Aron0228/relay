@@ -76,6 +76,9 @@ jobs:
       - name: Lint API
         run: pnpm --dir apps/api run lint
 
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
       - name: Install Playwright Chromium
         run: pnpm --dir apps/api exec playwright install --with-deps chromium
 

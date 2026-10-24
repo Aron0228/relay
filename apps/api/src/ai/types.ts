@@ -34,6 +34,8 @@ export interface AgentResult {
   stopReason: AgentStopReason;
   turns: number;
   toolCalls: number;
+  failedToolCalls?: number;
+  tokenUsage?: TokenUsage;
   model: string;
   promptVersion: string;
 }
@@ -44,11 +46,20 @@ export interface ToolCall {
   function: {name: string; arguments: string};
 }
 
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  reportedRequests: number;
+  unreportedRequests: number;
+}
+
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string | null;
   tool_calls?: ToolCall[];
   tool_call_id?: string;
+  usage?: {inputTokens: number; outputTokens: number; totalTokens: number};
 }
 
 export interface AgentTool {
@@ -74,3 +85,11 @@ export type AgentEvent = (
   type: string,
   payload: Record<string, unknown>,
 ) => void;
+
+export const AGENT_ACTIVITY_KIND = {
+  Message: 'message',
+  Observation: 'observation',
+} as const;
+
+export type AgentActivityKind =
+  (typeof AGENT_ACTIVITY_KIND)[keyof typeof AGENT_ACTIVITY_KIND];

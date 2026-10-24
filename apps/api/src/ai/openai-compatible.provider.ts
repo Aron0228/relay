@@ -5,6 +5,13 @@ import {positiveInteger} from './config';
 import {AgentTool, AiProvider, ChatMessage} from './types';
 
 const completionSchema = z.object({
+  usage: z
+    .object({
+      prompt_tokens: z.number().int().nonnegative(),
+      completion_tokens: z.number().int().nonnegative(),
+      total_tokens: z.number().int().nonnegative(),
+    })
+    .nullish(),
   choices: z
     .array(
       z.object({
@@ -85,13 +92,22 @@ export class OpenAiCompatibleProvider implements AiProvider {
       await delay(1000 * attempt, undefined, {signal: requestSignal});
     }
 
-    const {choices} = completionSchema.parse(await response.json());
+    const {choices, usage} = completionSchema.parse(await response.json());
     const message = choices[0].message;
 
     return {
       role: 'assistant',
       content: message.content ?? null,
       tool_calls: message.tool_calls,
+      ...(usage
+        ? {
+            usage: {
+              inputTokens: usage.prompt_tokens,
+              outputTokens: usage.completion_tokens,
+              totalTokens: usage.total_tokens,
+            },
+          }
+        : {}),
     };
   }
   private async errorDetail(

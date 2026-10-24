@@ -1,10 +1,11 @@
+import { WorkspaceShell } from './workspace-shell';
 import { provideHttpClient } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { of, throwError } from 'rxjs';
 import { routes } from '../../app.routes';
-import { WorkspaceShell } from './workspace-shell';
+import { ExecutionService } from '../execution/execution.service';
 import { SessionService } from '../auth/session.service';
 
 describe('Workspace routes', () => {
@@ -14,6 +15,10 @@ describe('Workspace routes', () => {
     TestBed.configureTestingModule({
       imports: [WorkspaceShell],
       providers: [provideHttpClient(), provideRouter(routes)],
+    });
+    vi.spyOn(TestBed.inject(ExecutionService), 'list').mockResolvedValue({
+      items: [],
+      nextCursor: null,
     });
     sessions = TestBed.inject(SessionService);
     vi.spyOn(sessions, 'me').mockReturnValue(of({ name: 'Finn the Human' }));

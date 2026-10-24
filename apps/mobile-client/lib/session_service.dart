@@ -16,6 +16,11 @@ class SessionService {
       ? 'http://10.0.2.2:3000'
       : 'http://localhost:3000';
 
+  String get apiBaseUrl => '$_baseUrl/api';
+  Map<String, String> get authorizationHeaders => {
+    'Authorization': 'Bearer $_token',
+  };
+
   Uri _url(String path) => Uri.parse('$_baseUrl/api/sessions/$path');
 
   Future<Map<String, dynamic>> login() async {

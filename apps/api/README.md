@@ -94,7 +94,9 @@ Authenticated API endpoints:
 The agent can inspect, navigate, click, fill, press keys, read text, and submit a
 structured verdict. Turn, tool, context, observation, request, and execution limits
 are configurable in `.env.sample`. Hitting a limit produces an inconclusive verdict.
-Provider failures mark the run failed; cancellation aborts the provider request and
+Temporary provider HTTP errors are retried up to `AI_REQUEST_MAX_ATTEMPTS` (default 3),
+within the existing request timeout. These retries repeat the model request, not browser
+actions. Persistent provider failures mark the run failed; cancellation aborts the provider request and
 closes the browser. Browser actions are not retried as a new job.
 
 The goal and target are stored on `execution.run`, activity in `execution.run_event`,
@@ -103,3 +105,22 @@ and the structured verdict, evidence, model, prompt version, and stop reason in
 separate verdict aggregation tables can be added when that functionality is introduced.
 Navigation (including redirects) is restricted to approved origins. Subresources
 can load from other origins; this restriction is not a network sandbox.
+
+## Run and worker screens
+
+Both clients list the signed-in user's runs and active sessions. Lists use a stable
+creation-time/ID cursor; search matches the test goal or run ID. Live details use the
+persisted activity SSE stream, and reconnect using the last received sequence.
+`reportProgress` lets agents publish a short message or factual observation. These
+updates are public summaries, not private model reasoning, and are stored as run events.
+
+Authenticated `/api/runs/{id}/media/stream` and `/media/video` routes enforce run
+ownership without exposing viewing tokens. Install **FFmpeg with libx264 support**
+(for example `brew install ffmpeg` on macOS) for recording playback. The original
+WebM is retained; the playback endpoint creates and caches an H.264 MP4 copy, with
+one conversion at a time. Configure `WORKER_FFMPEG_PATH` if FFmpeg is not on PATH.
+
+Worker/session routes intentionally omit the final verdict. Completed run routes
+show the saved verdict or execution failure, with the same activity timeline and
+recording. The initial demo script creates ownerless runs; use **New run** in a
+signed-in client to create a run that belongs to that account.

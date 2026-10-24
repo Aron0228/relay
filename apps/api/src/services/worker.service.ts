@@ -6,14 +6,15 @@ import {approvedUrl, allowedOrigins, positiveInteger} from '../ai/config';
 import {AGENT_PROMPT_VERSION} from '../ai/system-prompt';
 import {Job, Queue, Worker} from 'bullmq';
 import Redis from 'ioredis';
-import {fork} from 'node:child_process';
+import {execFile, fork} from 'node:child_process';
+import {promisify} from 'node:util';
 import {
   createHash,
   randomBytes,
   randomUUID,
   timingSafeEqual,
 } from 'node:crypto';
-import {access} from 'node:fs/promises';
+import {access, rename, rm} from 'node:fs/promises';
 import path from 'node:path';
 import {isRunFinished, Run, RUN_STATUS} from '../models';
 import {
@@ -27,6 +28,8 @@ import {
   WorkerScriptName,
   WORKER_SCRIPT,
 } from '../workers/protocol';
+
+const executeFile = promisify(execFile);
 
 export const WORKER_SERVICE_BINDING_KEY = 'services.WorkerService';
 export const WORKER_SERVICE_OPTIONS_BINDING_KEY =
@@ -55,6 +58,8 @@ export class WorkerService {
   private readonly actionDelayMs = Number(
     process.env.WORKER_ACTION_DELAY_MS ?? 1000,
   );
+  private readonly conversions = new Map<string, Promise<string>>();
+  private conversionQueue: Promise<unknown> = Promise.resolve();
   private readonly cancellations = new Map<string, () => void>();
   private readonly streams = new Set<() => void>();
   private readonly cancelChannel = `${this.queueName}:cancel`;
@@ -160,6 +165,44 @@ export class WorkerService {
     }
 
     return {run, viewToken};
+  }
+
+  async listOwned(
+    userId: string,
+    scope: string,
+    query: string,
+    before?: string,
+    limit = 25,
+  ) {
+    const cursor = before ? await this.getOwned(before, userId) : undefined;
+    const direction = scope === 'queued' ? 'ASC' : 'DESC';
+    const comparison = scope === 'queued' ? '>' : '<';
+    const rows = (await this.runs.execute(
+      `SELECT id FROM execution.run
+       WHERE user_id = $1
+         AND ($2 = 'all' OR ($2 = 'active' AND status = 'running') OR ($2 = 'queued' AND status = 'queued'))
+         AND (COALESCE(agent_input->>'prompt', script_name) ILIKE $3 OR id::text ILIKE $3)
+         AND ($4::timestamptz IS NULL OR (created_at, id) ${comparison} ($4::timestamptz, $5::uuid))
+       ORDER BY created_at ${direction}, id ${direction} LIMIT $6`,
+      [
+        userId,
+        scope,
+        `%${query.replace(/[\\%_]/g, '\\$&')}%`,
+        cursor?.createdAt ?? null,
+        cursor?.id ?? null,
+        limit + 1,
+      ],
+    )) as {id: string}[];
+    const hasMore = rows.length > limit;
+    const ids = rows.slice(0, limit).map(row => row.id);
+    const items = ids.length
+      ? await this.runs.find({
+          where: {id: {inq: ids}},
+          order: [`createdAt ${direction}`, `id ${direction}`],
+        })
+      : [];
+
+    return {items, nextCursor: hasMore ? items[items.length - 1].id : null};
   }
 
   async getOwned(id: string, userId: string): Promise<Run> {
@@ -287,6 +330,62 @@ export class WorkerService {
 
   videoPath(id: string): string {
     return path.join(this.videoDirectory, id, 'session.webm');
+  }
+
+  async playbackPath(id: string): Promise<string> {
+    const file = path.join(path.dirname(this.videoPath(id)), 'playback.mp4');
+
+    try {
+      await access(file);
+
+      return file;
+    } catch {
+      const existing = this.conversions.get(id);
+
+      if (existing) return existing;
+    }
+
+    const conversion = this.conversionQueue
+      .catch(() => {})
+      .then(async () => {
+        const temporary = file.replace('.mp4', '.tmp.mp4');
+
+        try {
+          await executeFile(
+            process.env.WORKER_FFMPEG_PATH ?? 'ffmpeg',
+            [
+              '-nostdin',
+              '-y',
+              '-i',
+              this.videoPath(id),
+              '-c:v',
+              'libx264',
+              '-preset',
+              'veryfast',
+              '-pix_fmt',
+              'yuv420p',
+              '-movflags',
+              '+faststart',
+              '-an',
+              temporary,
+            ],
+            {timeout: 60000},
+          );
+          await rename(temporary, file);
+
+          return file;
+        } catch {
+          await rm(temporary, {force: true});
+          throw new HttpErrors.ServiceUnavailable(
+            'Recording playback requires FFmpeg with H.264 support',
+          );
+        }
+      })
+      .finally(() => this.conversions.delete(id));
+    this.conversions.set(id, conversion);
+    this.conversionQueue = conversion;
+
+    return conversion;
   }
 
   async stream(run: Run, response: Response): Promise<void> {

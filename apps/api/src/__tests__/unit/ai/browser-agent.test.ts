@@ -97,6 +97,7 @@ describe('Browser agent', () => {
     expect(await agent.run(input, new AbortController().signal)).toMatchObject({
       stopReason: 'finished',
       toolCalls: 2,
+      failedToolCalls: 1,
     });
     expect(emit).toHaveBeenCalledWith(
       'agent.tool_failed',
@@ -223,6 +224,27 @@ describe('Browser agent', () => {
     });
   });
 
+  it('publishes typed public updates that can be persisted and replayed', async () => {
+    const {agent, complete, emit} = fixture();
+    complete.mockResolvedValueOnce(
+      call('reportProgress', {
+        kind: 'observation',
+        text: 'The Candy Kingdom shop is visible.',
+      }),
+    );
+
+    expect(await agent.run(input, new AbortController().signal)).toMatchObject({
+      stopReason: 'finished',
+      toolCalls: 2,
+      failedToolCalls: 0,
+    });
+    expect(emit).toHaveBeenCalledWith('agent.activity', {
+      turn: 1,
+      kind: 'observation',
+      text: 'The Candy Kingdom shop is visible.',
+    });
+  });
+
   it('rejects unapproved navigation and malformed locators before browser actions', async () => {
     const {browser} = fixture();
     const tools = new BrowserTools(browser, ['https://academybugs.com']);
@@ -244,5 +266,45 @@ describe('Browser agent', () => {
     );
     expect(browser.navigate).not.toHaveBeenCalled();
     expect(browser.click).not.toHaveBeenCalled();
+  });
+});
+
+it('accumulates usage without sending metric metadata back to the model', async () => {
+  const {agent, complete, emit} = fixture();
+  complete.mockResolvedValueOnce({
+    ...call('browserSnapshot'),
+    usage: {inputTokens: 100, outputTokens: 10, totalTokens: 110},
+  });
+  complete.mockResolvedValueOnce({
+    ...call('finish', verdict),
+    usage: {inputTokens: 150, outputTokens: 20, totalTokens: 170},
+  });
+
+  const result = await agent.run(input, new AbortController().signal);
+
+  expect(result.tokenUsage).toEqual({
+    inputTokens: 250,
+    outputTokens: 30,
+    totalTokens: 280,
+    reportedRequests: 2,
+    unreportedRequests: 0,
+  });
+  expect(emit).toHaveBeenCalledWith(
+    'agent.metrics',
+    expect.objectContaining({
+      tokenUsage: expect.objectContaining({totalTokens: 110}),
+    }),
+  );
+  expect(complete.mock.calls[1][0].some(message => message.usage)).toBe(false);
+});
+
+it('records missing provider usage rather than estimating tokens', async () => {
+  const {agent} = fixture();
+
+  const result = await agent.run(input, new AbortController().signal);
+
+  expect(result.tokenUsage).toMatchObject({
+    reportedRequests: 0,
+    unreportedRequests: 1,
   });
 });

@@ -80,6 +80,7 @@ class _SessionPageState extends State<SessionPage> {
 
     if (profile != null) {
       return WorkspaceShell(
+        sessions: _sessions,
         profile: profile,
         onSignOut: _logout,
         busy: _busy,

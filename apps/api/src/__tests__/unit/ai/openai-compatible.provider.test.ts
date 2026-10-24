@@ -139,3 +139,29 @@ it('cancels during retry backoff without sending another request', async () => {
   ).rejects.toMatchObject({name: 'AbortError'});
   expect(fetchMock).toHaveBeenCalledTimes(1);
 });
+
+it('retains provider-reported token usage', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [{message: {role: 'assistant', content: 'BMO is ready'}}],
+          usage: {prompt_tokens: 120, completion_tokens: 30, total_tokens: 150},
+        }),
+      ),
+    ),
+  );
+
+  const response = await new OpenAiCompatibleProvider().complete(
+    [],
+    BROWSER_TOOLS,
+    new AbortController().signal,
+  );
+
+  expect(response.usage).toEqual({
+    inputTokens: 120,
+    outputTokens: 30,
+    totalTokens: 150,
+  });
+});

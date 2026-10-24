@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'theme.dart';
+import 'session_service.dart';
+import 'features/execution/execution_page.dart';
 
 const _navigation = [
   (
@@ -26,12 +28,14 @@ class WorkspaceShell extends StatefulWidget {
   const WorkspaceShell({
     super.key,
     required this.profile,
+    this.sessions,
     required this.onSignOut,
     this.busy = false,
     this.error,
   });
 
   final Map<String, dynamic> profile;
+  final SessionService? sessions;
   final VoidCallback onSignOut;
   final bool busy;
   final String? error;
@@ -315,6 +319,16 @@ class _WorkspaceShellState extends State<WorkspaceShell> {
                 letterSpacing: -1,
               ),
             ),
+            if (widget.sessions != null &&
+                (_selected == 'Workers' || _selected == 'Runs'))
+              Padding(
+                padding: const EdgeInsets.only(top: 24),
+                child: ExecutionPage(
+                  key: ValueKey(_selected),
+                  sessions: widget.sessions!,
+                  workers: _selected == 'Workers',
+                ),
+              ),
             if (widget.error != null)
               Padding(
                 padding: const EdgeInsets.only(top: RelayTokens.medium),
