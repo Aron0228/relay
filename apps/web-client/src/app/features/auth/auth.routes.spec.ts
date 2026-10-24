@@ -4,13 +4,17 @@ import { Router, provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { of, throwError } from 'rxjs';
 import { routes } from '../../app.routes';
+import { WorkspaceShell } from '../workspace/workspace-shell';
 import { SessionService } from './session.service';
 
 describe('Authentication routes', () => {
   let sessions: SessionService;
 
   beforeEach(() => {
-    TestBed.configureTestingModule({ providers: [provideHttpClient(), provideRouter(routes)] });
+    TestBed.configureTestingModule({
+      imports: [WorkspaceShell],
+      providers: [provideHttpClient(), provideRouter(routes)],
+    });
     sessions = TestBed.inject(SessionService);
     vi.spyOn(sessions, 'me').mockReturnValue(
       throwError(() => new HttpErrorResponse({ status: 401 })),
