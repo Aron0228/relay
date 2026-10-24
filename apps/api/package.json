@@ -13,6 +13,8 @@
   },
   "scripts": {
     "build": "tsc",
+    "worker:example": "pnpm build && node dist/scripts/worker-example.js",
+    "worker:install": "playwright install chromium",
     "build:watch": "tsc --watch",
     "clean": "rimraf dist *.tsbuildinfo .eslintcache",
     "lint": "eslint --report-unused-disable-directives --ext .ts .",
@@ -27,7 +29,8 @@
     "prepare": "npm run build",
     "rebuild": "npm run clean && npm run build",
     "precoverage": "npm run pretest",
-    "pretest:watch": "npm run pretest"
+    "pretest:watch": "npm run pretest",
+    "agent:example": "pnpm build && node dist/scripts/agent-example.js"
   },
   "repository": {
     "type": "git"
@@ -48,13 +51,16 @@
     "@loopback/rest": "^15.0.16",
     "@loopback/rest-explorer": "^8.0.16",
     "@loopback/security": "^0.12.16",
+    "bullmq": "^5.81.5",
     "cookie": "^1.1.1",
     "db-migrate": "^0.11.14",
     "db-migrate-pg": "^1.5.2",
     "dotenv": "^17.4.2",
     "ioredis": "^5.11.1",
     "loopback-connector-postgresql": "^9.0.2",
-    "tslib": "^2.0.0"
+    "playwright": "^1.63.0",
+    "tslib": "^2.0.0",
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@loopback/build": "^12.0.15",

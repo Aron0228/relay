@@ -62,6 +62,7 @@ typings/
 
 # Cache used by TypeScript's incremental build
 *.tsbuildinfo
+/storage/worker-videos/
 
 # Emacs auto-save file
 \#*#

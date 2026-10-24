@@ -3,7 +3,7 @@ import {
   AuthenticationComponent,
   registerAuthenticationStrategy,
 } from '@loopback/authentication';
-import {ApplicationConfig} from '@loopback/core';
+import {ApplicationConfig, CoreBindings} from '@loopback/core';
 import {
   RestExplorerBindings,
   RestExplorerComponent,
@@ -33,6 +33,11 @@ export class RelayApplication extends BootMixin(
 
     // Set up the custom sequence
     this.sequence(MySequence);
+
+    this.bind(CoreBindings.LIFE_CYCLE_OBSERVER_OPTIONS).to({
+      orderedGroups: ['datasource', 'redis', 'worker', 'server'],
+      parallel: false,
+    });
 
     this.bind(RestBindings.REQUEST_BODY_PARSER_OPTIONS).to({
       raw: {limit: '25mb', inflate: false},

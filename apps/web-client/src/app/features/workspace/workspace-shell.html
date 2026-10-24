@@ -1,0 +1,122 @@
+<div class="workspace" [class.collapsed]="collapsed()" [class.menu-open]="mobileOpen()">
+  <header class="mobile-header">
+    <button
+      class="icon-button"
+      type="button"
+      #menuToggle
+      aria-label="Open menu"
+      aria-controls="workspace-sidebar"
+      [attr.aria-expanded]="mobileOpen()"
+      (click)="openMenu()"
+    >
+      <svg class="icon" [lucideIcon]="icons.menu" [size]="22" aria-hidden="true"></svg>
+    </button>
+    <span>{{ selected() }}</span>
+  </header>
+  @if (mobileOpen()) {
+    <button class="scrim" type="button" aria-label="Close menu" (click)="closeMenu()"></button>
+  }
+  <aside
+    #sidebar
+    id="workspace-sidebar"
+    tabindex="-1"
+    class="sidebar"
+    aria-label="Workspace menu"
+    (keydown)="menuKey($event)"
+  >
+    <div class="brand-row">
+      <span class="brand">Relay</span>
+      <button
+        class="icon-button search-toggle"
+        type="button"
+        aria-label="Search navigation"
+        [attr.aria-expanded]="searching()"
+        (click)="search()"
+      >
+        <svg class="icon" [lucideIcon]="icons.search" [size]="22" aria-hidden="true"></svg>
+      </button>
+      <button
+        class="icon-button collapse-toggle"
+        type="button"
+        [attr.aria-label]="collapsed() ? 'Expand sidebar' : 'Collapse sidebar'"
+        [attr.aria-expanded]="!collapsed()"
+        (click)="toggleSidebar()"
+      >
+        <svg class="icon" [lucideIcon]="icons.panelLeft" [size]="22" aria-hidden="true"></svg>
+      </button>
+      <button
+        class="icon-button mobile-close"
+        type="button"
+        aria-label="Close menu"
+        (click)="closeMenu()"
+      >
+        <svg class="icon" [lucideIcon]="icons.close" [size]="22" aria-hidden="true"></svg>
+      </button>
+    </div>
+    @if (searching()) {
+      <input
+        class="navigation-search"
+        type="search"
+        aria-label="Search navigation"
+        placeholder="Find a page…"
+        [value]="query()"
+        (input)="query.set($any($event.target).value)"
+      />
+    }
+    <nav aria-label="Main navigation">
+      @for (group of groups(); track group.label) {
+        <div class="nav-group">
+          <h2 class="group-label">{{ group.label }}</h2>
+          @for (item of group.items; track item.name) {
+            <a
+              class="nav-item"
+              [routerLink]="item.path"
+              [class.active]="selected() === item.name"
+              [attr.aria-current]="selected() === item.name ? 'page' : null"
+              [attr.aria-label]="item.name"
+              [title]="item.name"
+              (click)="select()"
+            >
+              <svg class="icon" [lucideIcon]="item.icon" [size]="22" aria-hidden="true"></svg>
+              <span class="nav-label">{{ item.name }}</span>
+            </a>
+          }
+        </div>
+      }
+      @if (query() && groups()[0].items.length + groups()[1].items.length === 0) {
+        <p class="empty-search" role="status">No pages found.</p>
+      }
+    </nav>
+    <div class="account">
+      @if (accountOpen()) {
+        <div class="account-menu">
+          <button type="button" [disabled]="busy()" (click)="logout()">
+            {{ busy() ? 'Signing out…' : 'Sign out' }}
+          </button>
+        </div>
+      }
+      <button
+        class="account-button"
+        type="button"
+        [attr.aria-label]="name() + ', account menu'"
+        [attr.aria-expanded]="accountOpen()"
+        (click)="toggleAccount()"
+      >
+        <span class="avatar" aria-hidden="true">{{ name().charAt(0).toUpperCase() }}</span>
+        <span class="account-details"
+          ><strong>{{ name() }}</strong
+          ><span>{{ email() }}</span></span
+        >
+      </button>
+    </div>
+  </aside>
+  <main class="content-frame" id="workspace-content" [attr.inert]="mobileOpen() ? '' : null">
+    <h1>{{ selected() }}</h1>
+    @if (error()) {
+      <p class="error" role="alert">{{ error() }}</p>
+    }
+    <section class="page-content" [attr.aria-label]="selected() + ' content'">
+      <router-outlet />
+    </section>
+  </main>
+</div>
