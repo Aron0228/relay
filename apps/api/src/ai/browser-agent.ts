@@ -53,6 +53,14 @@ export class BrowserAgent {
     ];
     let turns = 0;
     let toolCalls = 0;
+    let failedToolCalls = 0;
+    const tokenUsage = {
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      reportedRequests: 0,
+      unreportedRequests: 0,
+    };
 
     const conclude = (
       stopReason: AgentStopReason,
@@ -72,6 +80,8 @@ export class BrowserAgent {
         stopReason,
         turns,
         toolCalls,
+        failedToolCalls,
+        tokenUsage: {...tokenUsage},
         model: this.provider.model,
         promptVersion: AGENT_PROMPT_VERSION,
       };
@@ -134,9 +144,28 @@ export class BrowserAgent {
           finishing ? 'finish' : undefined,
         );
         signal.throwIfAborted();
-        messages.push(response);
+        const {usage, ...message} = response;
 
-        if (response.content) {
+        if (usage) {
+          tokenUsage.inputTokens += usage.inputTokens;
+          tokenUsage.outputTokens += usage.outputTokens;
+          tokenUsage.totalTokens += usage.totalTokens;
+          tokenUsage.reportedRequests++;
+        } else {
+          tokenUsage.unreportedRequests++;
+        }
+
+        this.emit('agent.metrics', {
+          failedToolCalls,
+          tokenUsage: {...tokenUsage},
+        });
+        messages.push(message);
+
+        const textVerdict = !response.tool_calls?.length
+          ? parseTextVerdict(response.content)
+          : undefined;
+
+        if (response.content && !textVerdict) {
           this.emit('agent.summary', {
             turn: turns,
             text: this.clip(response.content),
@@ -144,7 +173,7 @@ export class BrowserAgent {
         }
 
         if (!response.tool_calls?.length) {
-          const verdict = parseTextVerdict(response.content);
+          const verdict = textVerdict;
 
           if (verdict) {
             this.emit('agent.verdict_received', {
@@ -196,6 +225,10 @@ export class BrowserAgent {
               output,
             });
 
+            if (value.activity) {
+              this.emit('agent.activity', {turn: turns, ...value.activity});
+            }
+
             if (value.result) {
               return conclude('finished', value.result.summary, value.result);
             }
@@ -204,6 +237,11 @@ export class BrowserAgent {
             output = this.clip(
               JSON.stringify({error: (error as Error).message}),
             );
+            failedToolCalls++;
+            this.emit('agent.metrics', {
+              failedToolCalls,
+              tokenUsage: {...tokenUsage},
+            });
             this.emit('agent.tool_failed', {
               callId: call.id,
               name: call.function.name,

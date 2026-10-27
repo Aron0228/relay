@@ -20,6 +20,74 @@ export class RunController {
     @inject(RestBindings.Http.RESPONSE) private response: Response,
   ) {}
 
+  @get('/api/runs')
+  @authenticate('session')
+  async list(
+    @inject(SecurityBindings.USER) user: UserProfile,
+    @param.query.string('scope', {
+      schema: {type: 'string', enum: ['all', 'active', 'queued']},
+    })
+    scope = 'all',
+    @param.query.string('search', {schema: {type: 'string', maxLength: 200}})
+    search = '',
+    @param.query.string('before', {schema: {type: 'string', format: 'uuid'}})
+    before?: string,
+  ) {
+    const page = await this.workers.listOwned(
+      user[securityId],
+      scope,
+      search,
+      before,
+    );
+
+    this.response.setHeader('Cache-Control', 'no-store');
+
+    return {...page, items: page.items.map(run => this.publicRun(run))};
+  }
+
+  @get('/api/runs/{id}/media/stream')
+  @authenticate('session')
+  async ownedStream(
+    @param.path.string('id', {schema: {format: 'uuid'}}) id: string,
+    @inject(SecurityBindings.USER) user: UserProfile,
+  ): Promise<Response> {
+    const run = await this.workers.getOwned(id, user[securityId]);
+
+    if (isRunFinished(run.status)) {
+      throw new HttpErrors.NotFound('The live session has ended');
+    }
+
+    this.mediaHeaders();
+    await this.workers.stream(run, this.response);
+
+    return this.response;
+  }
+
+  @get('/api/runs/{id}/media/video')
+  @authenticate('session')
+  async ownedVideo(
+    @param.path.string('id', {schema: {format: 'uuid'}}) id: string,
+    @inject(SecurityBindings.USER) user: UserProfile,
+  ): Promise<Response> {
+    const run = await this.workers.getOwned(id, user[securityId]);
+
+    if (!isRunFinished(run.status) || !run.videoFile) {
+      throw new HttpErrors.NotFound('Recording is not available');
+    }
+
+    const video = await this.workers.playbackPath(id);
+
+    this.mediaHeaders();
+    this.response.setHeader('Content-Type', 'video/mp4');
+    await new Promise<void>((resolve, reject) => {
+      this.response.sendFile(video, error =>
+        error ? reject(error) : resolve(),
+      );
+    });
+
+    return this.response;
+  }
+
   @post('/api/runs', {responses: {'202': {description: 'Run queued'}}})
   @authenticate('session')
   async create(
@@ -142,10 +210,12 @@ export class RunController {
   async events(
     @param.path.string('id', {schema: {format: 'uuid'}}) id: string,
     @inject(SecurityBindings.USER) user: UserProfile,
+    @param.query.number('after', {schema: {type: 'integer', minimum: 0}})
+    after = 0,
   ) {
     await this.workers.getOwned(id, user[securityId]);
 
-    return this.workers.listEvents(id);
+    return this.workers.listEvents(id, after);
   }
 
   @post('/api/runs/{id}/cancel', {
@@ -232,6 +302,9 @@ export class RunController {
     return {
       id: run.id,
       scriptName: run.scriptName,
+      title: run.agentInput?.prompt ?? 'Example browser test',
+      targetUrl: run.agentInput?.targetUrl,
+      cancelRequested: run.cancelRequested,
       status: run.status,
       workerPid: run.workerPid,
       videoFile: run.videoFile,

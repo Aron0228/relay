@@ -17,6 +17,7 @@
   --color-button-text: #17181b;
   --color-button-hover: #dedfe3;
   --color-focus: var(--color-primary);
+  --color-success: #8fd5b1;
   --color-error: #ffb4ab;
 
   --space-small: 12px;
