@@ -31,6 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
+      FFMPEG_VERSION: '7.0.2'
       POSTGRES_TEST_URL: postgres://postgres:postgres@127.0.0.1:5432/relay_test
       REDIS_TEST_HOST: 127.0.0.1
       REDIS_TEST_PORT: 6379
@@ -76,8 +77,23 @@ jobs:
       - name: Lint API
         run: pnpm --dir apps/api run lint
 
-      - name: Install FFmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      # Static binaries avoid APT's codec dependencies and slow package mirrors.
+      - name: Cache FFmpeg
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ runner.tool_cache }}/ffmpeg
+          key: ffmpeg-static-${{ runner.os }}-${{ runner.arch }}-${{ env.FFMPEG_VERSION }}-v1
+
+      - name: Set up FFmpeg
+        uses: FedericoCarboni/setup-ffmpeg@36c6454b5a2348e7794ba2d82a21506605921e3d # v3
+        with:
+          ffmpeg-version: ${{ env.FFMPEG_VERSION }}
+
+      - name: Verify FFmpeg H.264 encoding
+        run: >-
+          ffmpeg -hide_banner -loglevel error
+          -f lavfi -i color=c=black:s=16x16:d=0.1
+          -frames:v 1 -c:v libx264 -pix_fmt yuv420p -f null -
 
       - name: Install Playwright Chromium
         run: pnpm --dir apps/api exec playwright install --with-deps chromium
