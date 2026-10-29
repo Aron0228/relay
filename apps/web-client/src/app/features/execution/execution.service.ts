@@ -1,17 +1,26 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
+import { WorkspaceService } from '../workspace/workspace.service';
 import { Run, RunEvent, RunPage, RunResult } from './execution.models';
 
 declare const API_BASE_URL: string;
 
 @Injectable({ providedIn: 'root' })
 export class ExecutionService {
+  private readonly workspaces = inject(WorkspaceService);
   private readonly http = inject(HttpClient);
   private readonly base = `${API_BASE_URL}/runs`;
 
   list(scope = 'all', search = '', before?: string) {
-    let params = new HttpParams().set('scope', scope).set('search', search);
+    const workspaceId = this.workspaces.active()?.id;
+
+    if (!workspaceId) return Promise.resolve({ items: [], nextCursor: null } as RunPage);
+
+    let params = new HttpParams()
+      .set('workspaceId', workspaceId)
+      .set('scope', scope)
+      .set('search', search);
 
     if (before) params = params.set('before', before);
 

@@ -113,6 +113,9 @@ describe('Authentication flow (e2e)', () => {
     fetchMock.mockResolvedValueOnce(
       Response.json({id: githubId, login: 'BMO'}),
     );
+    fetchMock.mockResolvedValueOnce(
+      Response.json([{email: 'bmo@ooo.example', verified: true}]),
+    );
     const callback = await client
       .get('/api/sessions/callback')
       .query({state, code: 'bmo-authorization-code'})

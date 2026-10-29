@@ -9,6 +9,7 @@ import {afterAll, beforeAll, describe, expect, it, vi} from 'vitest';
 import type {User} from '../../models';
 import type {RunRepository, UserRepository} from '../../repositories';
 import type {
+  WorkspaceService,
   SessionService,
   SessionStoreService,
   WorkerService,
@@ -25,6 +26,8 @@ describe('AI browser workers (e2e)', () => {
   let store: SessionStoreService;
   let user: User;
   let token: string;
+  let workspaceId: string;
+  let environmentId: string;
   let sessionHash: string;
   let directory: string;
   let site: Server;
@@ -146,6 +149,18 @@ describe('AI browser workers (e2e)', () => {
       await app.get<SessionService>('services.SessionService')
     ).create(user);
 
+    const workspaceService = await app.get<WorkspaceService>(
+      'services.WorkspaceService',
+    );
+    const workspace = await workspaceService.create(user.id, 'Candy Kingdom');
+    workspaceId = workspace.id as string;
+    const environment = await workspaceService.saveEnvironment(
+      workspaceId,
+      user.id,
+      {name: 'Tree Fort', baseUrl: process.env.WORKER_EXAMPLE_URL!},
+    );
+    environmentId = environment.id;
+
     token = session.token;
     sessionHash = session.session.tokenHash;
   }, 30000);
@@ -160,6 +175,12 @@ describe('AI browser workers (e2e)', () => {
 
       if (sessionHash) {
         await store.delete(sessionHash);
+      }
+
+      if (workspaceId) {
+        await runs.execute('DELETE FROM auth.workspace WHERE id = $1', [
+          workspaceId,
+        ]);
       }
 
       if (user) {
@@ -190,6 +211,8 @@ describe('AI browser workers (e2e)', () => {
       .post('/api/runs/agent')
       .set('Authorization', `Bearer ${token}`)
       .send({
+        workspaceId,
+        environmentId,
         prompt: 'Help Finn inspect the todo list',
         targetUrl: process.env.WORKER_EXAMPLE_URL,
       })
@@ -222,6 +245,8 @@ describe('AI browser workers (e2e)', () => {
       .post('/api/runs/agent')
       .set('Authorization', `Bearer ${token}`)
       .send({
+        workspaceId,
+        environmentId,
         prompt: 'Finn checks the shop',
         targetUrl: 'http://localhost/private',
       })
@@ -229,10 +254,23 @@ describe('AI browser workers (e2e)', () => {
   });
 
   it('blocks redirects to an unapproved origin inside Chromium', async () => {
+    const workspaceService = await app.get<WorkspaceService>(
+      'services.WorkspaceService',
+    );
+    const escapeEnvironment = await workspaceService.saveEnvironment(
+      workspaceId,
+      user.id,
+      {
+        name: 'Ice King escape',
+        baseUrl: `${process.env.WORKER_EXAMPLE_URL}/escape`,
+      },
+    );
     const response = await client
       .post('/api/runs/agent')
       .set('Authorization', `Bearer ${token}`)
       .send({
+        workspaceId,
+        environmentId: escapeEnvironment.id,
         prompt: 'Finn inspects the page',
         targetUrl: `${process.env.WORKER_EXAMPLE_URL}/escape`,
       })
@@ -264,6 +302,8 @@ describe('AI browser workers (e2e)', () => {
       await runs.create({
         id,
         userId: user.id,
+        workspaceId,
+        environmentId,
         scriptName: 'agent',
         agentInput: {
           prompt: `Candy pagination ${index}`,
@@ -277,12 +317,12 @@ describe('AI browser workers (e2e)', () => {
     }
 
     const first = await client
-      .get('/api/runs?search=Candy%20pagination')
+      .get(`/api/runs?workspaceId=${workspaceId}&search=Candy%20pagination`)
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
     const second = await client
       .get(
-        `/api/runs?search=Candy%20pagination&before=${first.body.nextCursor}`,
+        `/api/runs?workspaceId=${workspaceId}&search=Candy%20pagination&before=${first.body.nextCursor}`,
       )
       .set('Authorization', `Bearer ${token}`)
       .expect(200);

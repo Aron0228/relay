@@ -4,6 +4,9 @@ import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { of, throwError } from 'rxjs';
+import { WorkspaceService } from '../workspace/workspace.service';
+import { WorkspaceList } from '../workspace/workspace-list';
+import { WorkspaceHome } from '../workspace/workspace-home';
 import { routes } from '../../app.routes';
 import { SessionService } from './session.service';
 
@@ -12,9 +15,16 @@ describe('Authentication routes', () => {
 
   beforeEach(() => {
     TestBed.configureTestingModule({
-      imports: [WorkspaceShell],
+      imports: [WorkspaceShell, WorkspaceList, WorkspaceHome],
       providers: [provideHttpClient(), provideRouter(routes)],
     });
+    const workspaces = TestBed.inject(WorkspaceService);
+    const workspace = { id: 'candy', name: 'Candy Kingdom', role: 'admin' as const };
+    workspaces.active.set(workspace);
+    workspaces.items.set([workspace]);
+    workspaces.ready.set(true);
+    vi.spyOn(workspaces, 'refresh').mockResolvedValue();
+    vi.spyOn(workspaces, 'request').mockResolvedValue([]);
     sessions = TestBed.inject(SessionService);
     vi.spyOn(sessions, 'me').mockReturnValue(
       throwError(() => new HttpErrorResponse({ status: 401 })),
@@ -41,20 +51,20 @@ describe('Authentication routes', () => {
     vi.mocked(sessions.me).mockReturnValue(of({ name: 'Finn the Human' }));
     await RouterTestingHarness.create('/auth/login');
 
-    expect(TestBed.inject(Router).url).toBe('/overview');
+    expect(TestBed.inject(Router).url).toBe('/workspaces');
   });
 
-  it('exchanges the callback code once and replaces the callback with overview', async () => {
+  it('exchanges the callback code once and replaces the callback with workspace selection', async () => {
     vi.mocked(sessions.me).mockReturnValue(of({ name: 'Finn the Human' }));
     const exchange = vi.spyOn(sessions, 'exchange').mockReturnValue(of({}));
     const router = TestBed.inject(Router);
     const navigate = vi.spyOn(router, 'navigateByUrl');
     await RouterTestingHarness.create('/auth/callback?exchange_code=finn-code');
-    await vi.waitFor(() => expect(router.url).toBe('/overview'));
+    await vi.waitFor(() => expect(router.url).toBe('/workspaces'));
 
     expect(exchange).toHaveBeenCalledExactlyOnceWith('finn-code');
     expect(sessions.profile()?.['name']).toBe('Finn the Human');
-    expect(navigate).toHaveBeenCalledWith('/overview', { replaceUrl: true });
+    expect(navigate).toHaveBeenCalledWith('/workspaces', { replaceUrl: true });
   });
 
   it('returns failed callbacks to login with a retry message', async () => {

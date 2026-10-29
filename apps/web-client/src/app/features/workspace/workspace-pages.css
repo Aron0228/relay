@@ -1,0 +1,222 @@
+h1 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 550;
+  letter-spacing: -0.5px;
+}
+h2 {
+  margin: 0 0 20px;
+  font-size: 17px;
+  font-weight: 550;
+}
+p {
+  color: var(--color-muted);
+  line-height: 1.6;
+  font-size: 14px;
+}
+.page-heading {
+  margin: 0 16px 40px;
+}
+.page-heading p {
+  margin: 10px 0 0;
+}
+.workspace-list {
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+  overflow: hidden;
+}
+.workspace-card {
+  display: flex;
+  box-sizing: border-box;
+  width: 100%;
+  align-items: center;
+  text-align: left;
+  gap: 16px;
+  padding: 20px;
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+.workspace-list > .workspace-card:last-child {
+  border-bottom: 0;
+}
+.workspace-card:hover {
+  background: var(--color-selected);
+}
+app-workspace-avatar {
+  --avatar-size: 40px;
+  font-size: 17px;
+  border-radius: 8px;
+}
+.workspace-info {
+  display: grid;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.workspace-info strong {
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  font-weight: 550;
+}
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-muted);
+  font-size: 12px;
+}
+.role {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+.selected {
+  color: var(--color-primary);
+}
+.create-card {
+  margin-top: 16px;
+  border: 1px dashed var(--color-border);
+  border-radius: 12px;
+  color: var(--color-muted);
+}
+.create-card .meta {
+  display: none;
+}
+.create-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: var(--color-selected);
+  color: var(--color-text);
+  flex-shrink: 0;
+}
+.create-form {
+  display: grid;
+  gap: 28px;
+}
+.form-panel {
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+  padding: 20px;
+}
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+.setting-row label {
+  font-size: 14px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+.name-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: min(100%, 320px);
+}
+input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 14px;
+  color: var(--color-text);
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 11px 12px;
+}
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+.primary,
+.secondary {
+  display: inline-flex;
+  justify-content: center;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 10px 16px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  text-decoration: none;
+}
+.primary {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+.secondary {
+  background: transparent;
+  color: var(--color-muted);
+}
+button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.invitations {
+  margin: 44px 16px 0;
+}
+.invitation {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 0;
+  border-top: 1px solid var(--color-border);
+}
+.invitation strong {
+  font-size: 14px;
+  font-weight: 500;
+}
+.invitation p {
+  margin: 6px 0 0;
+  font-size: 12px;
+}
+.error {
+  color: var(--color-error);
+}
+.empty {
+  padding: 12px 20px;
+}
+@media (max-width: 600px) {
+  h1 {
+    font-size: 24px;
+  }
+  .page-heading {
+    margin: 0 0 28px;
+  }
+  .workspace-card {
+    gap: 12px;
+    padding: 16px;
+  }
+  .role {
+    font-size: 11px;
+  }
+  .setting-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+  }
+  .name-controls {
+    width: 100%;
+  }
+  .invitation {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .invitations {
+    margin-inline: 0;
+  }
+}

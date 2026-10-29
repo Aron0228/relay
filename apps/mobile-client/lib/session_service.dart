@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'package:http/http.dart' as http;
@@ -9,6 +10,34 @@ class SessionService {
 
   final http.Client _client;
   String? _token;
+  String? workspaceId;
+  String? userId;
+
+  Future<void> restoreWorkspaceSelection() async {
+    try {
+      workspaceId = await SharedPreferencesAsync().getString(
+        'relay.workspace.$userId',
+      );
+    } catch (_) {
+      workspaceId = null;
+    }
+  }
+
+  Future<void> selectWorkspace(String? id) async {
+    workspaceId = id;
+
+    try {
+      final preferences = SharedPreferencesAsync();
+      if (id == null) {
+        await preferences.remove('relay.workspace.$userId');
+      } else {
+        await preferences.setString('relay.workspace.$userId', id);
+      }
+    } catch (_) {
+      /* Keep the in-memory selection if local storage is unavailable. */
+    }
+  }
+
   static const _configuredUrl = String.fromEnvironment('API_BASE_URL');
   final String _baseUrl = _configuredUrl.isNotEmpty
       ? _configuredUrl
@@ -68,7 +97,10 @@ class SessionService {
       throw Exception('Could not load the session');
     }
 
-    return jsonDecode(response.body) as Map<String, dynamic>;
+    final profile = jsonDecode(response.body) as Map<String, dynamic>;
+    userId = profile['id'] as String?;
+
+    return profile;
   }
 
   Future<void> logout() async {
@@ -80,6 +112,8 @@ class SessionService {
     if (response.statusCode != 204) throw Exception('Logout failed');
 
     _token = null;
+    workspaceId = null;
+    userId = null;
   }
 
   void close() => _client.close();

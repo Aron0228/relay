@@ -27,7 +27,7 @@ export class AuthCallback implements OnInit {
 
       if (!profile) throw new Error('Session unavailable');
 
-      await this.router.navigateByUrl('/overview', { replaceUrl: true });
+      await this.router.navigateByUrl('/workspaces', { replaceUrl: true });
     } catch {
       this.sessions.clear();
       this.sessions.error.set('Could not sign in. Please try again.');

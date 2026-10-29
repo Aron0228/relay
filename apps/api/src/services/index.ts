@@ -7,3 +7,5 @@ export * from './session-exchange.service';
 export * from './login-rate-limit.service';
 export * from './github-webhook.service';
 export * from './worker.service';
+export * from './workspace.service';
+export * from './workspace-avatar.service';

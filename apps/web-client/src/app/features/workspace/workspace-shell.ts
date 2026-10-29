@@ -17,6 +17,8 @@ import { Component, ElementRef, viewChild, computed, inject, signal } from '@ang
 import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { filter, firstValueFrom } from 'rxjs';
+import { WorkspaceService } from './workspace.service';
+import { WorkspacePicker } from './components/workspace-picker';
 import { SessionService } from '../auth/session.service';
 
 const NAVIGATION = [
@@ -40,7 +42,7 @@ const NAVIGATION = [
 ] as const;
 
 @Component({
-  imports: [LucideDynamicIcon, RouterLink, RouterOutlet],
+  imports: [LucideDynamicIcon, RouterLink, RouterOutlet, WorkspacePicker],
   selector: 'app-workspace-shell',
   templateUrl: './workspace-shell.html',
   styleUrl: './workspace-shell.css',
@@ -52,6 +54,12 @@ export class WorkspaceShell {
     panelLeft: LucidePanelLeft,
     close: LucideX,
   };
+
+  protected readonly workspaces = inject(WorkspaceService);
+
+  constructor() {
+    void this.workspaces.ensureLoaded();
+  }
 
   private readonly sessions = inject(SessionService);
   private readonly router = inject(Router);
@@ -148,6 +156,7 @@ export class WorkspaceShell {
     try {
       await firstValueFrom(this.sessions.logout());
       this.sessions.clear();
+      this.workspaces.clear();
       this.sessions.error.set('');
 
       await this.router.navigateByUrl('/auth/login', { replaceUrl: true });

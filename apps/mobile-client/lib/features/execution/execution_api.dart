@@ -49,7 +49,12 @@ class ExecutionApi {
     String? before,
   }) async {
     final query = Uri(
-      queryParameters: {'scope': scope, 'search': search, 'before': ?before},
+      queryParameters: {
+        'scope': scope,
+        'search': search,
+        'before': ?before,
+        'workspaceId': ?sessions.workspaceId,
+      },
     ).query;
     final data = await _get('?$query') as Map<String, dynamic>;
 
@@ -66,14 +71,18 @@ class ExecutionApi {
   Future<Map<String, dynamic>?> result(String id) async =>
       await _get('/$id/result') as Map<String, dynamic>?;
 
-  Future<TestRun> create(String prompt, String targetUrl) async {
+  Future<TestRun> create(String prompt, String environmentId) async {
     final response = await _client.post(
       url('/agent'),
       headers: {
         ...sessions.authorizationHeaders,
         'Content-Type': 'application/json',
       },
-      body: jsonEncode({'prompt': prompt, 'targetUrl': targetUrl}),
+      body: jsonEncode({
+        'prompt': prompt,
+        'workspaceId': sessions.workspaceId,
+        'environmentId': environmentId,
+      }),
     );
 
     if (response.statusCode != 202) {

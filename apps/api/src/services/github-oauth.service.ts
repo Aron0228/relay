@@ -1,9 +1,11 @@
 import {BindingScope, injectable} from '@loopback/core';
+import {z} from 'zod';
 import {HttpErrors} from '@loopback/rest';
 
 export interface GithubUser {
   id: number;
   login: string;
+  verifiedEmails?: string[];
 }
 
 interface GithubTokenResponse {
@@ -60,7 +62,36 @@ export class GithubOAuthService {
       throw new HttpErrors.BadGateway('GitHub returned an invalid user');
     }
 
-    return user;
+    const verifiedEmails: string[] = [];
+
+    for (let page = 1; ; page++) {
+      const response = await this.request(
+        `https://api.github.com/user/emails?per_page=100&page=${page}`,
+        {
+          headers: {
+            Accept: 'application/vnd.github+json',
+            Authorization: `Bearer ${token.access_token}`,
+            'User-Agent': 'relay-api',
+          },
+        },
+      );
+      const emails = z
+        .array(z.object({email: z.string().email(), verified: z.boolean()}))
+        .safeParse(response);
+
+      if (!emails.success)
+        throw new HttpErrors.BadGateway('GitHub returned invalid email data');
+
+      verifiedEmails.push(
+        ...emails.data
+          .filter(email => email.verified)
+          .map(email => email.email.toLowerCase()),
+      );
+
+      if (emails.data.length < 100) break;
+    }
+
+    return {...user, verifiedEmails};
   }
 
   private async request(url: string, options: RequestInit): Promise<unknown> {

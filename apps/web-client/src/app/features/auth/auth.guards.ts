@@ -15,5 +15,5 @@ export const guestGuard: CanActivateFn = async () => {
   const router = inject(Router);
   const profile = await sessions.restore();
 
-  return profile ? router.createUrlTree(['/overview']) : true;
+  return profile ? router.createUrlTree(['/workspaces']) : true;
 };

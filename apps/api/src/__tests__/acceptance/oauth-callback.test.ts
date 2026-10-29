@@ -110,6 +110,12 @@ describe('OAuth callback (acceptance)', () => {
     fetchMock.mockResolvedValueOnce(
       Response.json({id: githubId, login: username}),
     );
+    fetchMock.mockResolvedValueOnce(
+      Response.json([
+        {email: 'finn@ooo.example', verified: true},
+        {email: 'unverified@ooo.example', verified: false},
+      ]),
+    );
   }
 
   it.each([OAUTH_CLIENT_TYPE.Web, OAUTH_CLIENT_TYPE.Mobile])(
@@ -140,6 +146,7 @@ describe('OAuth callback (acceptance)', () => {
       );
       expect(String(user.githubId)).toBe(String(githubId));
       expect(user.username).toBe('Finn-the-human');
+      expect(user.verifiedEmails).toEqual(['finn@ooo.example']);
 
       const expected = new URL(transaction.redirectUri);
       expected.searchParams.set('exchange_code', code);
@@ -177,7 +184,7 @@ describe('OAuth callback (acceptance)', () => {
         .query({state: transaction.state, code: 'replay'})
         .expect(400);
 
-      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock).toHaveBeenCalledTimes(3);
 
       const consumed = await Promise.all([
         store.consumeExchangeCode(codeHash),

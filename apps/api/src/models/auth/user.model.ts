@@ -28,6 +28,13 @@ export class User extends Entity {
   })
   username!: string;
 
+  @property({
+    type: 'array',
+    itemType: 'string',
+    postgresql: {columnName: 'verified_emails', dataType: 'jsonb'},
+  })
+  verifiedEmails?: string[];
+
   constructor(data?: Partial<User>) {
     super(data);
   }

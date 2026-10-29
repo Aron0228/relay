@@ -120,6 +120,7 @@ export class SessionService {
     const url = new URL('https://github.com/login/oauth/authorize');
 
     url.searchParams.set('client_id', this.githubClientId);
+    url.searchParams.set('scope', 'user:email');
     url.searchParams.set('redirect_uri', this.githubCallbackUri);
     url.searchParams.set('state', transaction.state);
     url.searchParams.set('prompt', 'select_account');

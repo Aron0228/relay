@@ -101,6 +101,7 @@ export class WorkerService {
     scriptName: WorkerScriptName,
     userId?: string,
     agentInput?: AgentInput,
+    context?: {workspaceId: string; environmentId: string},
   ): Promise<{run: Run; viewToken: string}> {
     if (this.stopping) {
       throw new HttpErrors.ServiceUnavailable(
@@ -139,6 +140,8 @@ export class WorkerService {
       userId,
       scriptName,
       agentInput,
+      workspaceId: context?.workspaceId,
+      environmentId: context?.environmentId,
       status: RUN_STATUS.Queued,
       viewTokenHash: this.hash(viewToken),
       cancelRequested: false,
@@ -173,13 +176,22 @@ export class WorkerService {
     query: string,
     before?: string,
     limit = 25,
+    workspaceId?: string,
   ) {
     const cursor = before ? await this.getOwned(before, userId) : undefined;
+
+    if (
+      cursor &&
+      cursor.workspaceId !== (workspaceId ?? null) &&
+      (cursor.workspaceId || workspaceId)
+    ) {
+      throw new HttpErrors.NotFound('Cursor not found');
+    }
     const direction = scope === 'queued' ? 'ASC' : 'DESC';
     const comparison = scope === 'queued' ? '>' : '<';
     const rows = (await this.runs.execute(
       `SELECT id FROM execution.run
-       WHERE user_id = $1
+       WHERE (($7::uuid IS NULL AND workspace_id IS NULL AND user_id = $1) OR (workspace_id = $7::uuid AND EXISTS (SELECT 1 FROM auth.workspace_member m JOIN auth.workspace w ON w.id = m.workspace_id WHERE m.workspace_id = execution.run.workspace_id AND m.user_id = $1 AND w.deleted_at IS NULL)))
          AND ($2 = 'all' OR ($2 = 'active' AND status = 'running') OR ($2 = 'queued' AND status = 'queued'))
          AND (COALESCE(agent_input->>'prompt', script_name) ILIKE $3 OR id::text ILIKE $3)
          AND ($4::timestamptz IS NULL OR (created_at, id) ${comparison} ($4::timestamptz, $5::uuid))
@@ -191,6 +203,7 @@ export class WorkerService {
         cursor?.createdAt ?? null,
         cursor?.id ?? null,
         limit + 1,
+        workspaceId ?? null,
       ],
     )) as {id: string}[];
     const hasMore = rows.length > limit;
@@ -206,7 +219,20 @@ export class WorkerService {
   }
 
   async getOwned(id: string, userId: string): Promise<Run> {
-    const run = await this.runs.findOne({where: {id, userId}});
+    const run = await this.runs.findOne({where: {id}});
+    const memberships = run?.workspaceId
+      ? ((await this.runs.execute(
+          'SELECT m.id FROM auth.workspace_member m JOIN auth.workspace w ON w.id = m.workspace_id WHERE m.workspace_id = $1 AND m.user_id = $2 AND w.deleted_at IS NULL',
+          [run.workspaceId, userId],
+        )) as {id: string}[])
+      : [];
+
+    if (
+      run &&
+      (run.workspaceId ? !memberships.length : run.userId !== userId)
+    ) {
+      throw new HttpErrors.NotFound('Run not found');
+    }
 
     if (!run) {
       throw new HttpErrors.NotFound('Run not found');
@@ -220,6 +246,7 @@ export class WorkerService {
 
     if (
       !run ||
+      !!run.workspaceId ||
       !token ||
       !timingSafeEqual(
         Buffer.from(run.viewTokenHash, 'hex'),
@@ -265,7 +292,12 @@ export class WorkerService {
     });
   }
 
-  async activity(id: string, response: Response, after = 0): Promise<void> {
+  async activity(
+    id: string,
+    response: Response,
+    after = 0,
+    userId?: string,
+  ): Promise<void> {
     let closed = false;
     const close = () => {
       if (closed) {
@@ -286,6 +318,14 @@ export class WorkerService {
 
     try {
       while (!closed) {
+        if (userId) {
+          try {
+            await this.getOwned(id, userId);
+          } catch {
+            break;
+          }
+        }
+
         const events = await this.listEvents(id, after);
 
         for (const event of events) {
@@ -388,7 +428,7 @@ export class WorkerService {
     return conversion;
   }
 
-  async stream(run: Run, response: Response): Promise<void> {
+  async stream(run: Run, response: Response, userId?: string): Promise<void> {
     await this.initialize();
 
     const subscriber = new Redis(this.redisOptions());
@@ -422,8 +462,7 @@ export class WorkerService {
     };
 
     const heartbeat = setInterval(() => {
-      this.runs
-        .findById(run.id)
+      (userId ? this.getOwned(run.id, userId) : this.runs.findById(run.id))
         .then(current => {
           if (isRunFinished(current.status)) {
             close();
@@ -532,6 +571,26 @@ export class WorkerService {
     }
 
     const run = await this.runs.findById(id);
+    let exampleUrl = this.exampleUrl;
+
+    if (run.workspaceId) {
+      const targets = (await this.runs.execute(
+        'SELECT e.id, e.base_url AS "baseUrl" FROM auth.environment e JOIN auth.workspace w ON w.id = e.workspace_id WHERE e.id = $1 AND w.id = $2 AND e.deleted_at IS NULL AND w.deleted_at IS NULL',
+        [run.environmentId, run.workspaceId],
+      )) as {id: string; baseUrl: string}[];
+
+      if (!targets.length) {
+        await this.finish(run.id, {
+          status: RUN_STATUS.Cancelled,
+          error: 'Workspace or environment is no longer active',
+        });
+
+        return;
+      }
+
+      exampleUrl = targets[0].baseUrl;
+    }
+
     const child = fork(
       path.join(__dirname, '../workers/browser-worker.js'),
       [],
@@ -619,7 +678,7 @@ export class WorkerService {
           scriptName: run.scriptName as WorkerScriptName,
           agentInput: run.agentInput,
           videoDirectory: path.dirname(this.videoPath(id)),
-          exampleUrl: this.exampleUrl,
+          exampleUrl,
           actionDelayMs: this.actionDelayMs,
         },
       });

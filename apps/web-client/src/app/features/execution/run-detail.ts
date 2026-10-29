@@ -1,6 +1,7 @@
 import { Component, DestroyRef, inject, OnInit, signal, computed } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { DatePipe, DecimalPipe } from '@angular/common';
+import { WorkspaceService } from '../workspace/workspace.service';
 import { ExecutionService } from './execution.service';
 import { Run, RunEvent, RunResult, isActive } from './execution.models';
 import { RunMedia } from './components/run-media';
@@ -35,7 +36,8 @@ import { ActivityTimeline } from './components/activity-timeline';
       </div>
       @if (liveView && !active(current)) {
         <p class="muted">
-          This session has ended. <a [routerLink]="['/runs', current.id]">View the completed run</a>
+          This session has ended.
+          <a [routerLink]="['/runs', current.id]">View the completed run</a>
         </p>
       }
       <div class="run-metrics" aria-live="polite">
@@ -85,6 +87,7 @@ import { ActivityTimeline } from './components/activity-timeline';
   `,
 })
 export class RunDetail implements OnInit {
+  private readonly workspaces = inject(WorkspaceService);
   private readonly api = inject(ExecutionService);
   private readonly route = inject(ActivatedRoute);
   private readonly destroy = inject(DestroyRef);
@@ -151,6 +154,14 @@ export class RunDetail implements OnInit {
       const run = await this.api.get(this.id);
 
       if (this.closed) return;
+
+      if (run.workspaceId && run.workspaceId !== this.workspaces.active()?.id) {
+        const workspace = this.workspaces.items().find((item) => item.id === run.workspaceId);
+
+        if (workspace) {
+          this.workspaces.activate(workspace.id);
+        }
+      }
 
       this.run.set(run);
       this.stop = this.api.watch(

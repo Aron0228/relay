@@ -43,6 +43,7 @@ export class OAuthCallbackService {
     const user = await this.users.resolveGithubUser(
       githubUser.id,
       githubUser.login,
+      githubUser.verifiedEmails ?? [],
     );
 
     const exchangeCode = randomBytes(32).toString('base64url');

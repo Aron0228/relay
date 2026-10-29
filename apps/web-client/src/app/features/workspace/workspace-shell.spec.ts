@@ -4,6 +4,9 @@ import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { of, throwError } from 'rxjs';
+import { WorkspaceService } from '../workspace/workspace.service';
+import { WorkspaceList } from '../workspace/workspace-list';
+import { WorkspaceHome } from '../workspace/workspace-home';
 import { routes } from '../../app.routes';
 import { ExecutionService } from '../execution/execution.service';
 import { SessionService } from '../auth/session.service';
@@ -13,13 +16,20 @@ describe('Workspace routes', () => {
 
   beforeEach(() => {
     TestBed.configureTestingModule({
-      imports: [WorkspaceShell],
+      imports: [WorkspaceShell, WorkspaceList, WorkspaceHome],
       providers: [provideHttpClient(), provideRouter(routes)],
     });
     vi.spyOn(TestBed.inject(ExecutionService), 'list').mockResolvedValue({
       items: [],
       nextCursor: null,
     });
+    const workspaces = TestBed.inject(WorkspaceService);
+    const workspace = { id: 'candy', name: 'Candy Kingdom', role: 'admin' as const };
+    workspaces.active.set(workspace);
+    workspaces.items.set([workspace]);
+    workspaces.ready.set(true);
+    vi.spyOn(workspaces, 'refresh').mockResolvedValue();
+    vi.spyOn(workspaces, 'request').mockResolvedValue([]);
     sessions = TestBed.inject(SessionService);
     vi.spyOn(sessions, 'me').mockReturnValue(of({ name: 'Finn the Human' }));
     vi.spyOn(sessions, 'logout').mockReturnValue(of({}));
