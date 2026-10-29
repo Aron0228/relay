@@ -442,6 +442,13 @@ class _WorkspaceShellState extends State<WorkspaceShell> {
                   children: [
                     CircleAvatar(
                       radius: 18,
+                      foregroundImage: widget.profile['avatarUrl'] != null
+                          ? NetworkImage(widget.profile['avatarUrl'] as String)
+                          : null,
+                      onForegroundImageError:
+                          widget.profile['avatarUrl'] != null
+                          ? (error, stackTrace) {}
+                          : null,
                       backgroundColor: RelayTokens.text,
                       foregroundColor: RelayTokens.buttonText,
                       child: Text(_name.isEmpty ? 'G' : _name[0].toUpperCase()),

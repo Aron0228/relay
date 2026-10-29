@@ -5,6 +5,8 @@ import {HttpErrors} from '@loopback/rest';
 export interface GithubUser {
   id: number;
   login: string;
+  // eslint-disable-next-line @typescript-eslint/naming-convention
+  avatar_url?: string;
   verifiedEmails?: string[];
 }
 

@@ -49,6 +49,7 @@ export class SessionService {
         id: user.id,
         name: user.username,
         githubId: user.githubId,
+        avatarUrl: user.avatarUrl ?? null,
       },
       createdAt,
       expiresAt: new Date(

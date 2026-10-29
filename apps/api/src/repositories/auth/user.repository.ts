@@ -24,12 +24,14 @@ export class UserRepository extends DefaultCrudRepository<
     githubId: number,
     username: string,
     verifiedEmails: string[] = [],
+    avatarUrl?: string,
   ): Promise<User> {
     const rows = (await this.dataSource.execute(
-      `INSERT INTO auth."user" (github_id, username, verified_emails) VALUES ($1, $2, $3::jsonb)
-       ON CONFLICT (github_id) DO UPDATE SET username = EXCLUDED.username, verified_emails = EXCLUDED.verified_emails
-       RETURNING id, github_id AS "githubId", username`,
-      [githubId, username, JSON.stringify(verifiedEmails)],
+      `INSERT INTO auth."user" AS existing (github_id, username, verified_emails, avatar_url) VALUES ($1, $2, $3::jsonb, $4)
+       ON CONFLICT (github_id) DO UPDATE SET username = EXCLUDED.username, verified_emails = EXCLUDED.verified_emails,
+         avatar_url = COALESCE(EXCLUDED.avatar_url, existing.avatar_url)
+       RETURNING id, github_id AS "githubId", username, avatar_url AS "avatarUrl"`,
+      [githubId, username, JSON.stringify(verifiedEmails), avatarUrl ?? null],
     )) as User[];
 
     return new User(rows[0]);

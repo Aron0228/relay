@@ -103,7 +103,17 @@
         [attr.aria-expanded]="accountOpen()"
         (click)="toggleAccount()"
       >
-        <span class="avatar" aria-hidden="true">{{ name().charAt(0).toUpperCase() }}</span>
+        <span class="avatar" aria-hidden="true">
+          @if (profile()?.['avatarUrl']; as avatarUrl) {
+            <img
+              [src]="avatarUrl"
+              alt=""
+              referrerpolicy="no-referrer"
+              (error)="$any($event.target).hidden = true"
+            />
+          }
+          <span>{{ name().charAt(0).toUpperCase() }}</span>
+        </span>
         <span class="account-details"
           ><strong>{{ name() }}</strong
           ><span>{{ email() }}</span></span

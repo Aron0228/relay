@@ -108,7 +108,12 @@ describe('OAuth callback (acceptance)', () => {
     );
 
     fetchMock.mockResolvedValueOnce(
-      Response.json({id: githubId, login: username}),
+      Response.json({
+        id: githubId,
+        login: username,
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        avatar_url: 'https://avatars.githubusercontent.com/u/12345?v=4',
+      }),
     );
     fetchMock.mockResolvedValueOnce(
       Response.json([
@@ -197,7 +202,12 @@ describe('OAuth callback (acceptance)', () => {
   );
 
   it('reuses the same local user and refreshes their GitHub username', async () => {
-    const existing = await users.resolveGithubUser(githubId, 'Finn');
+    const existing = await users.resolveGithubUser(
+      githubId,
+      'Finn',
+      [],
+      'https://avatars.githubusercontent.com/u/12345?v=3',
+    );
     const transaction = await login();
 
     githubSuccess('Finn-the-human');
@@ -214,7 +224,10 @@ describe('OAuth callback (acceptance)', () => {
     hashes.push(codeHash);
 
     expect((await exchanges.findById(codeHash)).userId).toBe(existing.id);
-    expect((await users.findById(existing.id)).username).toBe('Finn-the-human');
+    expect(await users.findById(existing.id)).toMatchObject({
+      username: 'Finn-the-human',
+      avatarUrl: 'https://avatars.githubusercontent.com/u/12345?v=4',
+    });
     expect((await users.count({githubId})).count).toBe(1);
   });
 
@@ -245,6 +258,9 @@ describe('OAuth callback (acceptance)', () => {
 
     expect(session?.userProfile.name).toBe('Finn-the-human');
     expect(session?.tokenHash).not.toBe(response.body.token);
+    expect(session?.userProfile.avatarUrl).toBe(
+      'https://avatars.githubusercontent.com/u/12345?v=4',
+    );
     expect(response.headers['set-cookie']).toBeUndefined();
 
     await client
