@@ -1,5 +1,14 @@
 import {AgentInput} from '../../ai/types';
-import {Entity, model, property} from '@loopback/repository';
+import {Task} from './task.model';
+import {belongsTo, Entity, model, property} from '@loopback/repository';
+
+export const RUN_STAGE = {
+  Reproduction: 'reproduction',
+  StepVerification: 'step_verification',
+  Critic: 'critic',
+} as const;
+
+export type RunStage = (typeof RUN_STAGE)[keyof typeof RUN_STAGE];
 
 export const RUN_STATUS = {
   Queued: 'queued',
@@ -19,6 +28,23 @@ export function isRunFinished(status: RunStatus): boolean {
   settings: {forceId: false, postgresql: {schema: 'execution', table: 'run'}},
 })
 export class Run extends Entity {
+  @belongsTo(
+    () => Task,
+    {name: 'task'},
+    {type: 'string', postgresql: {columnName: 'task_id', dataType: 'uuid'}},
+  )
+  taskId?: string;
+
+  @property({type: 'string', jsonSchema: {enum: Object.values(RUN_STAGE)}})
+  stage?: RunStage | null;
+
+  @property({
+    type: 'number',
+    jsonSchema: {minimum: 1},
+    postgresql: {dataType: 'integer'},
+  })
+  attempt?: number | null;
+
   @property({
     type: 'string',
     postgresql: {columnName: 'workspace_id', dataType: 'uuid'},
