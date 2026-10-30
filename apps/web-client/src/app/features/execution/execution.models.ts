@@ -9,6 +9,8 @@ export type RunStatus = (typeof RUN_STATUS)[keyof typeof RUN_STATUS];
 
 export interface Run {
   id: string;
+  workspaceId?: string;
+  environmentId?: string;
   title: string;
   targetUrl?: string;
   status: RunStatus;

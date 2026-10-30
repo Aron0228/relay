@@ -1,7 +1,8 @@
-import { Component, inject, output, signal } from '@angular/core';
+import { Component, inject, output, signal, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
+import { WorkspaceService, Environment } from '../../workspace/workspace.service';
 import { Router } from '@angular/router';
 
 declare const API_BASE_URL: string;
@@ -23,11 +24,17 @@ declare const API_BASE_URL: string;
             placeholder="Issue description"
           ></textarea>
         </label>
-        <label>Target URL<input name="url" [(ngModel)]="url" type="url" required /></label>
+        <label
+          >Environment<select name="environment" [(ngModel)]="environmentId" required>
+            @for (environment of environments(); track environment.id) {
+              <option [value]="environment.id">{{ environment.name }}</option>
+            }
+          </select></label
+        >
         @if (error()) {
           <p role="alert">{{ error() }}</p>
         }
-        <button type="submit" [disabled]="busy() || !prompt.trim()">
+        <button type="submit" [disabled]="busy() || !prompt.trim() || !environmentId">
           {{ busy() ? 'Queuing…' : 'Start test' }}
         </button>
       </form>
@@ -83,7 +90,20 @@ declare const API_BASE_URL: string;
     }
   `,
 })
-export class StartRun {
+export class StartRun implements OnInit {
+  private readonly workspaces = inject(WorkspaceService);
+  protected readonly environments = signal<Environment[]>([]);
+  protected environmentId = '';
+
+  async ngOnInit() {
+    try {
+      const environments = await this.workspaces.environments();
+      this.environments.set(environments);
+      this.environmentId = environments[0]?.id ?? '';
+    } catch {
+      this.error.set('Configure an environment in Workspace Settings first.');
+    }
+  }
   private readonly http = inject(HttpClient);
   private readonly router = inject(Router);
   readonly created = output<void>();
@@ -100,7 +120,11 @@ export class StartRun {
       const run = await firstValueFrom(
         this.http.post<{ id: string }>(
           `${API_BASE_URL}/runs/agent`,
-          { prompt: this.prompt, targetUrl: this.url },
+          {
+            prompt: this.prompt,
+            workspaceId: this.workspaces.active()!.id,
+            environmentId: this.environmentId,
+          },
           { withCredentials: true },
         ),
       );

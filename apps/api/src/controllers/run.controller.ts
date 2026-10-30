@@ -11,12 +11,13 @@ import {
 } from '@loopback/rest';
 import {SecurityBindings, securityId, UserProfile} from '@loopback/security';
 import {isRunFinished, Run} from '../models';
-import {WorkerService} from '../services';
+import {WorkspaceService, WorkerService} from '../services';
 import {WorkerScriptName, WORKER_SCRIPT} from '../workers/protocol';
 
 export class RunController {
   constructor(
     @service(WorkerService) private workers: WorkerService,
+    @service(WorkspaceService) private workspaces: WorkspaceService,
     @inject(RestBindings.Http.RESPONSE) private response: Response,
   ) {}
 
@@ -32,12 +33,20 @@ export class RunController {
     search = '',
     @param.query.string('before', {schema: {type: 'string', format: 'uuid'}})
     before?: string,
+    @param.query.string('workspaceId', {
+      schema: {type: 'string', format: 'uuid'},
+    })
+    workspaceId?: string,
   ) {
+    if (workspaceId)
+      await this.workspaces.requireMember(workspaceId, user[securityId]);
     const page = await this.workers.listOwned(
       user[securityId],
       scope,
       search,
       before,
+      25,
+      workspaceId,
     );
 
     this.response.setHeader('Cache-Control', 'no-store');
@@ -58,7 +67,7 @@ export class RunController {
     }
 
     this.mediaHeaders();
-    await this.workers.stream(run, this.response);
+    await this.workers.stream(run, this.response, user[securityId]);
 
     return this.response;
   }
@@ -97,21 +106,34 @@ export class RunController {
         'application/json': {
           schema: {
             type: 'object',
-            required: ['scriptName'],
+            required: ['scriptName', 'workspaceId', 'environmentId'],
             properties: {
               scriptName: {type: 'string', enum: Object.values(WORKER_SCRIPT)},
+              workspaceId: {type: 'string', format: 'uuid'},
+              environmentId: {type: 'string', format: 'uuid'},
             },
             additionalProperties: false,
           },
         },
       },
     })
-    body: {scriptName: WorkerScriptName},
+    body: {
+      scriptName: WorkerScriptName;
+      workspaceId: string;
+      environmentId: string;
+    },
     @inject(SecurityBindings.USER) user: UserProfile,
   ): Promise<object> {
-    const {run, viewToken} = await this.workers.create(
+    await this.workspaces.environment(
+      body.workspaceId,
+      user[securityId],
+      body.environmentId,
+    );
+    const {run} = await this.workers.create(
       body.scriptName,
       user[securityId],
+      undefined,
+      {workspaceId: body.workspaceId, environmentId: body.environmentId},
     );
 
     this.response.status(202);
@@ -119,8 +141,8 @@ export class RunController {
 
     return {
       ...this.publicRun(run),
-      streamUrl: `/api/runs/${run.id}/stream?token=${viewToken}`,
-      videoUrl: `/api/runs/${run.id}/video?token=${viewToken}`,
+      streamUrl: `/api/runs/${run.id}/media/stream`,
+      videoUrl: `/api/runs/${run.id}/media/video`,
     };
   }
 
@@ -135,26 +157,47 @@ export class RunController {
         'application/json': {
           schema: {
             type: 'object',
-            required: ['prompt'],
+            required: ['prompt', 'workspaceId', 'environmentId'],
             additionalProperties: false,
             properties: {
               prompt: {type: 'string', minLength: 1, maxLength: 4000},
+              workspaceId: {type: 'string', format: 'uuid'},
+              environmentId: {type: 'string', format: 'uuid'},
               targetUrl: {type: 'string', format: 'uri', maxLength: 2000},
             },
           },
         },
       },
     })
-    body: {prompt: string; targetUrl?: string},
+    body: {
+      prompt: string;
+      targetUrl?: string;
+      workspaceId: string;
+      environmentId: string;
+    },
     @inject(SecurityBindings.USER) user: UserProfile,
   ): Promise<object> {
-    const {run, viewToken} = await this.workers.create(
+    const environment = await this.workspaces.environment(
+      body.workspaceId,
+      user[securityId],
+      body.environmentId,
+    );
+
+    if (
+      body.targetUrl &&
+      new URL(body.targetUrl).toString() !== environment.baseUrl
+    ) {
+      throw new HttpErrors.BadRequest('Use the configured environment URL');
+    }
+
+    const {run} = await this.workers.create(
       WORKER_SCRIPT.Agent,
       user[securityId],
       {
         prompt: body.prompt,
-        targetUrl: body.targetUrl ?? 'https://academybugs.com/',
+        targetUrl: environment.baseUrl,
       },
+      {workspaceId: body.workspaceId, environmentId: body.environmentId},
     );
 
     this.response.status(202);
@@ -164,8 +207,8 @@ export class RunController {
       ...this.publicRun(run),
       activityUrl: `/api/runs/${run.id}/activity`,
       resultUrl: `/api/runs/${run.id}/result`,
-      streamUrl: `/api/runs/${run.id}/stream?token=${viewToken}`,
-      videoUrl: `/api/runs/${run.id}/video?token=${viewToken}`,
+      streamUrl: `/api/runs/${run.id}/media/stream`,
+      videoUrl: `/api/runs/${run.id}/media/video`,
     };
   }
 
@@ -189,7 +232,7 @@ export class RunController {
     after = 0,
   ): Promise<Response> {
     await this.workers.getOwned(id, user[securityId]);
-    await this.workers.activity(id, this.response, after);
+    await this.workers.activity(id, this.response, after, user[securityId]);
 
     return this.response;
   }
@@ -301,6 +344,8 @@ export class RunController {
   private publicRun(run: Run): object {
     return {
       id: run.id,
+      workspaceId: run.workspaceId,
+      environmentId: run.environmentId,
       scriptName: run.scriptName,
       title: run.agentInput?.prompt ?? 'Example browser test',
       targetUrl: run.agentInput?.targetUrl,

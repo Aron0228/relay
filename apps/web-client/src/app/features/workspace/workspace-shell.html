@@ -53,6 +53,7 @@
         <svg class="icon" [lucideIcon]="icons.close" [size]="22" aria-hidden="true"></svg>
       </button>
     </div>
+    <app-workspace-picker [collapsed]="collapsed()" />
     @if (searching()) {
       <input
         class="navigation-search"
@@ -102,7 +103,17 @@
         [attr.aria-expanded]="accountOpen()"
         (click)="toggleAccount()"
       >
-        <span class="avatar" aria-hidden="true">{{ name().charAt(0).toUpperCase() }}</span>
+        <span class="avatar" aria-hidden="true">
+          @if (profile()?.['avatarUrl']; as avatarUrl) {
+            <img
+              [src]="avatarUrl"
+              alt=""
+              referrerpolicy="no-referrer"
+              (error)="$any($event.target).hidden = true"
+            />
+          }
+          <span>{{ name().charAt(0).toUpperCase() }}</span>
+        </span>
         <span class="account-details"
           ><strong>{{ name() }}</strong
           ><span>{{ email() }}</span></span
@@ -116,6 +127,11 @@
       <p class="error" role="alert">{{ error() }}</p>
     }
     <section class="page-content" [attr.aria-label]="selected() + ' content'">
+      @if (workspaces.error()) {
+        <p role="alert">
+          {{ workspaces.error() }} <button (click)="workspaces.refresh()">Retry</button>
+        </p>
+      }
       <router-outlet />
     </section>
   </main>

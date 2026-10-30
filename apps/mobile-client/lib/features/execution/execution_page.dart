@@ -7,6 +7,7 @@ import 'execution_api.dart';
 import 'run_detail.dart';
 import 'run_media.dart';
 import 'run_status.dart';
+import '../workspace/workspace_api.dart';
 
 class ExecutionPage extends StatefulWidget {
   const ExecutionPage({
@@ -112,7 +113,27 @@ class _ExecutionPageState extends State<ExecutionPage> {
 
   Future<void> _newRun() async {
     final goal = TextEditingController();
-    final url = TextEditingController(text: 'https://academybugs.com/');
+    final workspaceApi = WorkspaceApi(widget.sessions);
+    List<Map<String, dynamic>> environments;
+
+    try {
+      environments = await workspaceApi.list(
+        '/workspaces/${widget.sessions.workspaceId}/environments',
+      );
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not load environments.')),
+        );
+      }
+      return;
+    } finally {
+      workspaceApi.close();
+    }
+
+    if (!mounted) return;
+
+    String? environmentId = environments.firstOrNull?['id'] as String?;
     final form = GlobalKey<FormState>();
     var busy = false;
     String? error;
@@ -139,15 +160,22 @@ class _ExecutionPageState extends State<ExecutionPage> {
                           ? 'Enter a test goal'
                           : null,
                     ),
-                    TextFormField(
-                      controller: url,
+                    DropdownButtonFormField<String>(
+                      initialValue: environmentId,
                       decoration: const InputDecoration(
-                        labelText: 'Target URL',
+                        labelText: 'Environment',
                       ),
-                      validator: (value) =>
-                          Uri.tryParse(value ?? '')?.hasAuthority == true
-                          ? null
-                          : 'Enter a valid URL',
+                      items: [
+                        for (final environment in environments)
+                          DropdownMenuItem(
+                            value: environment['id'] as String,
+                            child: Text(environment['name'] as String),
+                          ),
+                      ],
+                      onChanged: (value) => update(() => environmentId = value),
+                      validator: (value) => value == null
+                          ? 'Configure an environment in Workspace Settings first'
+                          : null,
                     ),
                     if (error != null)
                       Text(
@@ -175,7 +203,7 @@ class _ExecutionPageState extends State<ExecutionPage> {
                       try {
                         final run = await _api.create(
                           goal.text.trim(),
-                          url.text.trim(),
+                          environmentId!,
                         );
 
                         if (context.mounted) Navigator.pop(context, run);
@@ -196,7 +224,6 @@ class _ExecutionPageState extends State<ExecutionPage> {
       ),
     );
     goal.dispose();
-    url.dispose();
 
     if (run != null && mounted) {
       await Navigator.of(context).push(

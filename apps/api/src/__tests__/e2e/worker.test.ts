@@ -112,15 +112,14 @@ describe('On-demand Playwright workers (e2e)', () => {
   }, 30000);
 
   async function createRun() {
-    const response = await client
-      .post('/api/runs')
-      .set('Authorization', `Bearer ${token}`)
-      .send({scriptName: 'example-todo'})
-      .expect(202);
+    const {run, viewToken} = await workers.create('example-todo', user.id);
+    runIds.push(run.id);
 
-    runIds.push(response.body.id);
-
-    return response.body as {id: string; streamUrl: string; videoUrl: string};
+    return {
+      id: run.id,
+      streamUrl: `/api/runs/${run.id}/stream?token=${viewToken}`,
+      videoUrl: `/api/runs/${run.id}/video?token=${viewToken}`,
+    };
   }
 
   async function waitForFinished(id: string) {
@@ -317,15 +316,13 @@ describe('On-demand Playwright workers (e2e)', () => {
     const timeoutApp = await setupApplication({workers: true});
 
     try {
-      const response = await timeoutApp.client
-        .post('/api/runs')
-        .set('Authorization', `Bearer ${token}`)
-        .send({scriptName: 'example-todo'})
-        .expect(202);
+      const timeoutWorkers = await timeoutApp.app.get<WorkerService>(
+        'services.WorkerService',
+      );
+      const {run} = await timeoutWorkers.create('example-todo', user.id);
+      runIds.push(run.id);
 
-      runIds.push(response.body.id);
-
-      const failed = await waitForFinished(response.body.id);
+      const failed = await waitForFinished(run.id);
 
       expect(failed.status).toBe('failed');
       expect(failed.error).toBe('Worker execution timed out');

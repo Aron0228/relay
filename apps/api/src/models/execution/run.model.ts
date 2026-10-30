@@ -21,6 +21,18 @@ export function isRunFinished(status: RunStatus): boolean {
 export class Run extends Entity {
   @property({
     type: 'string',
+    postgresql: {columnName: 'workspace_id', dataType: 'uuid'},
+  })
+  workspaceId?: string | null;
+
+  @property({
+    type: 'string',
+    postgresql: {columnName: 'environment_id', dataType: 'uuid'},
+  })
+  environmentId?: string | null;
+
+  @property({
+    type: 'string',
     id: true,
     required: true,
     postgresql: {dataType: 'uuid'},
