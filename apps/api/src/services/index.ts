@@ -9,3 +9,5 @@ export * from './github-webhook.service';
 export * from './worker.service';
 export * from './workspace.service';
 export * from './workspace-avatar.service';
+export * from './github-app.service';
+export * from './github-connection.service';

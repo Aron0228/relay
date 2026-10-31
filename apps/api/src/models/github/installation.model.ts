@@ -42,6 +42,18 @@ export class GithubInstallation extends Entity {
   })
   createdAt?: Date;
 
+  @property({
+    type: 'date',
+    postgresql: {columnName: 'disconnected_at', dataType: 'timestamptz'},
+  })
+  disconnectedAt?: Date | null;
+
+  @property({
+    type: 'string',
+    postgresql: {columnName: 'connected_by', dataType: 'uuid'},
+  })
+  connectedBy?: string | null;
+
   constructor(data?: Partial<GithubInstallation>) {
     super(data);
   }

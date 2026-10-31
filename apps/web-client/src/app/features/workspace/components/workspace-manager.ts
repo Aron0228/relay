@@ -5,6 +5,7 @@ import { SessionService } from '../../auth/session.service';
 import { WorkspaceAvatarUpload } from './workspace-avatar-upload';
 import { WorkspaceSettingsTabs, WorkspaceSettingsTab } from './workspace-settings-tabs';
 import { WorkspaceSidePanel } from './workspace-side-panel';
+import { WorkspaceGithubSettings } from './workspace-github-settings';
 import { FormsModule } from '@angular/forms';
 import {
   WorkspaceService,
@@ -21,6 +22,7 @@ import {
     WorkspaceAvatarUpload,
     WorkspaceSettingsTabs,
     WorkspaceSidePanel,
+    WorkspaceGithubSettings,
   ],
   styleUrl: './workspace-manager.css',
   template: `
@@ -188,6 +190,15 @@ import {
             }
           </div>
         </section>
+        @if (tab() === 'github') {
+          <section
+            role="tabpanel"
+            id="workspace-settings-github"
+            aria-labelledby="workspace-settings-tab-github"
+          >
+            <app-workspace-github-settings />
+          </section>
+        }
       </div>
       @if (panel()) {
         <app-workspace-side-panel [title]="panelTitle()" (closed)="closePanel()">

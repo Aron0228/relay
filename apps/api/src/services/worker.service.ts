@@ -1,6 +1,7 @@
-import {BindingScope, inject, lifeCycleObserver} from '@loopback/core';
+import {BindingScope, inject, lifeCycleObserver, service} from '@loopback/core';
 import {IsolationLevel, repository} from '@loopback/repository';
 import {HttpErrors, Response} from '@loopback/rest';
+import {GithubConnectionService} from './github-connection.service';
 import {AgentInput, AgentResult, AGENT_VERDICT} from '../ai/types';
 import {approvedUrl, allowedOrigins, positiveInteger} from '../ai/config';
 import {AGENT_PROMPT_VERSION} from '../ai/system-prompt';
@@ -74,6 +75,8 @@ export class WorkerService {
     @repository(RunRepository) private runs: RunRepository,
     @repository(RunEventRepository) private events: RunEventRepository,
     @repository(RunResultRepository) private results: RunResultRepository,
+    @service(GithubConnectionService)
+    private githubConnections: GithubConnectionService,
     @inject(WORKER_SERVICE_OPTIONS_BINDING_KEY, {optional: true})
     private options: WorkerServiceOptions = {},
   ) {
@@ -591,11 +594,38 @@ export class WorkerService {
       exampleUrl = targets[0].baseUrl;
     }
 
+    if (run.taskId) {
+      try {
+        const target = await this.githubConnections.targetForTask(
+          run.taskId,
+          run.workspaceId!,
+          run.environmentId!,
+        );
+        exampleUrl = target.targetUrl;
+
+        if (run.agentInput) {
+          run.agentInput = {...run.agentInput, targetUrl: target.targetUrl};
+          await this.runs.updateById(id, {agentInput: run.agentInput});
+        }
+      } catch {
+        await this.finish(run.id, {
+          status: RUN_STATUS.Cancelled,
+          error:
+            'GitHub connection or approved environment is no longer available',
+        });
+
+        return;
+      }
+    }
+
     const child = fork(
       path.join(__dirname, '../workers/browser-worker.js'),
       [],
       {
         stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
+        env: run.taskId
+          ? {...process.env, AI_ALLOWED_ORIGINS: new URL(exampleUrl).origin}
+          : process.env,
       },
     );
     let result: WorkerResult | undefined;
