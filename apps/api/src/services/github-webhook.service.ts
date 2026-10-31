@@ -1,7 +1,8 @@
-import {BindingScope, injectable} from '@loopback/core';
+import {BindingScope, injectable, service} from '@loopback/core';
 import {repository} from '@loopback/repository';
 import {HttpErrors} from '@loopback/rest';
 import {createHmac, timingSafeEqual} from 'node:crypto';
+import {IssueReproductionService} from './issue-reproduction.service';
 import {WebhookDeliveryRepository} from '../repositories';
 
 export const GITHUB_WEBHOOK_SERVICE_BINDING_KEY =
@@ -14,6 +15,8 @@ export class GithubWebhookService {
   constructor(
     @repository(WebhookDeliveryRepository)
     private deliveries: WebhookDeliveryRepository,
+    @service(IssueReproductionService)
+    private reproductions: IssueReproductionService,
   ) {}
 
   async receive(
@@ -40,7 +43,6 @@ export class GithubWebhookService {
         Buffer.from(signature.slice('sha256='.length), 'hex'),
       )
     ) {
-      console.log('tst', Buffer.from(signature.slice('sha256='.length), 'hex'));
       throw new HttpErrors.Unauthorized('Invalid webhook signature');
     }
 
@@ -78,6 +80,8 @@ export class GithubWebhookService {
       eventType,
       payload,
     );
+
+    await this.reproductions.processDelivery(deliveryId);
 
     return {
       duplicate: !recorded,

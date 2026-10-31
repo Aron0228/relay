@@ -1,6 +1,15 @@
 import {authenticate} from '@loopback/authentication';
 import {inject, service} from '@loopback/core';
-import {del, get, HttpErrors, param, post, requestBody} from '@loopback/rest';
+import {
+  del,
+  get,
+  HttpErrors,
+  param,
+  post,
+  requestBody,
+  Response,
+  RestBindings,
+} from '@loopback/rest';
 import {securityId, SecurityBindings, UserProfile} from '@loopback/security';
 import {z} from 'zod';
 import {GithubConnectionService} from '../services/github-connection.service';
@@ -22,6 +31,7 @@ export class GithubConnectionController {
   constructor(
     @service(GithubConnectionService)
     private connections: GithubConnectionService,
+    @inject(RestBindings.Http.RESPONSE) private response: Response,
   ) {}
 
   @get('/api/workspaces/{id}/github')
@@ -37,6 +47,8 @@ export class GithubConnectionController {
     @param.path.string('id', {schema: {format: 'uuid'}}) id: string,
     @inject(SecurityBindings.USER) user: UserProfile,
   ) {
+    this.response.setHeader('Cache-Control', 'no-store');
+
     return this.connections.installationUrl(id, user[securityId]);
   }
 

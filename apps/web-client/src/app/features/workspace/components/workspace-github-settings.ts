@@ -1,4 +1,4 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, HostListener, inject, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Environment, WorkspaceService } from '../workspace.service';
@@ -229,6 +229,7 @@ export class WorkspaceGithubSettings implements OnInit {
   protected readonly panel = signal<'connection' | 'repository' | null>(null);
   protected readonly busy = signal(false);
   protected readonly error = signal('');
+  private waitingForGithub = false;
   protected githubInstallationId = 0;
   protected installationId = '';
   protected githubRepositoryId = 0;
@@ -268,6 +269,14 @@ export class WorkspaceGithubSettings implements OnInit {
     }
   }
 
+  @HostListener('window:focus')
+  protected returnedFromGithub() {
+    if (this.waitingForGithub && !this.busy()) {
+      this.waitingForGithub = false;
+      this.refresh();
+    }
+  }
+
   protected refresh() {
     void this.perform(async () => {
       await this.load();
@@ -297,6 +306,7 @@ export class WorkspaceGithubSettings implements OnInit {
           ? `${this.path()}/installations/${installationId}/settings-url`
           : `${this.path()}/installation-url`;
         const { url } = await this.workspaces.request<{ url: string }>('GET', path);
+        this.waitingForGithub = true;
         popup.location.replace(url);
       } catch (error) {
         popup.close();

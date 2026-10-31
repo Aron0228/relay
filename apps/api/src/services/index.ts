@@ -11,3 +11,4 @@ export * from './workspace.service';
 export * from './workspace-avatar.service';
 export * from './github-app.service';
 export * from './github-connection.service';
+export * from './issue-reproduction.service';
