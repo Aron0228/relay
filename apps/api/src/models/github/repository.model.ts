@@ -66,6 +66,12 @@ export class GithubRepository extends Entity {
   })
   createdAt?: Date;
 
+  @property({
+    type: 'date',
+    postgresql: {columnName: 'disconnected_at', dataType: 'timestamptz'},
+  })
+  disconnectedAt?: Date | null;
+
   constructor(data?: Partial<GithubRepository>) {
     super(data);
   }

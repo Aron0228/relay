@@ -4,6 +4,7 @@ export const WORKSPACE_SETTINGS_TAB = {
   General: 'general',
   Members: 'members',
   Environments: 'environments',
+  Github: 'github',
 } as const;
 export type WorkspaceSettingsTab =
   (typeof WORKSPACE_SETTINGS_TAB)[keyof typeof WORKSPACE_SETTINGS_TAB];
@@ -63,6 +64,10 @@ export type WorkspaceSettingsTab =
       outline-offset: -4px;
     }
     @media (max-width: 500px) {
+      [role='tablist'] {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
       button {
         padding: 12px 14px;
         font-size: 13px;
@@ -77,6 +82,7 @@ export class WorkspaceSettingsTabs {
     { id: WORKSPACE_SETTINGS_TAB.General, label: 'General' },
     { id: WORKSPACE_SETTINGS_TAB.Members, label: 'Members' },
     { id: WORKSPACE_SETTINGS_TAB.Environments, label: 'Environments' },
+    { id: WORKSPACE_SETTINGS_TAB.Github, label: 'GitHub' },
   ];
 
   protected key(event: KeyboardEvent) {
