@@ -15,7 +15,10 @@ const installationSchema = z.object({
     type: z.enum(['User', 'Organization']),
   }),
   suspended_at: z.string().nullable(),
-  permissions: z.object({issues: z.string().optional()}),
+  permissions: z.object({
+    issues: z.string().optional(),
+    members: z.string().optional(),
+  }),
 });
 const repositorySchema = z.object({
   id: z.number().int().positive(),
@@ -90,6 +93,17 @@ export class GithubAppService {
       });
     } catch {
       throw new HttpErrors.BadGateway('GitHub App request failed');
+    }
+
+    if (
+      response.status === 429 ||
+      (response.status === 403 &&
+        (response.headers.get('x-ratelimit-remaining') === '0' ||
+          response.headers.has('retry-after')))
+    ) {
+      throw new HttpErrors.ServiceUnavailable(
+        'GitHub rate limit reached; retry later',
+      );
     }
 
     if ([401, 403, 404].includes(response.status))
@@ -209,6 +223,12 @@ export class GithubAppService {
         );
 
       return installation;
+    }
+
+    if (!['read', 'write'].includes(installation.permissions.members ?? '')) {
+      throw new HttpErrors.Forbidden(
+        'Organization permissions: Members (read) is required to verify the installation owner. Enable it in the GitHub App settings and approve the updated permissions for this installation.',
+      );
     }
 
     const current = this.parse(

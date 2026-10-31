@@ -72,9 +72,13 @@ void main() {
     final sessions = SessionService();
     Map<String, dynamic>? saved;
     final opened = <Uri>[];
+    var loads = 0;
     final api = WorkspaceApi(
       sessions,
       client: MockClient((request) async {
+        if (request.method == 'GET' && request.url.path.endsWith('/github')) {
+          loads++;
+        }
         if (request.method == 'POST') {
           saved = jsonDecode(request.body) as Map<String, dynamic>;
           return http.Response('{"id":"repo"}', 200);
@@ -147,6 +151,10 @@ void main() {
       'https://github.com/apps/relay-bmo/installations/new',
       'https://github.com/settings/installations/12345',
     ]);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+    expect(loads, 2);
     await tester.ensureVisible(find.byType(PopupMenuButton<String>));
     await tester.tap(find.byType(PopupMenuButton<String>));
     await tester.pumpAndSettle();

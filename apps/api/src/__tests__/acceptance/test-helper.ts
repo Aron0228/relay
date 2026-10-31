@@ -6,6 +6,7 @@ import {
 } from '@loopback/testlab';
 import path from 'path';
 import {POSTGRES_CONFIG_BINDING_KEY} from '../../datasources/postgres.datasource';
+import {ISSUE_REPRODUCTION_OPTIONS_BINDING_KEY} from '../../services/issue-reproduction.service';
 import {WORKER_SERVICE_OPTIONS_BINDING_KEY} from '../../services/worker.service';
 
 const testPostgresConfig = {
@@ -17,7 +18,7 @@ const testPostgresConfig = {
 };
 
 export async function setupApplication(
-  options: {workers?: boolean} = {},
+  options: {workers?: boolean; recovery?: boolean} = {},
 ): Promise<AppWithClient> {
   const restConfig = givenHttpServerConfig({
     // Customize the server configuration here.
@@ -37,6 +38,10 @@ export async function setupApplication(
   app
     .bind(WORKER_SERVICE_OPTIONS_BINDING_KEY)
     .to({enabled: options.workers ?? false});
+
+  app
+    .bind(ISSUE_REPRODUCTION_OPTIONS_BINDING_KEY)
+    .to({recoveryEnabled: options.recovery ?? false});
 
   await app.boot();
   await app.start();

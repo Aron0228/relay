@@ -70,6 +70,15 @@ it('selects a reachable repository and submits only its approved environment map
     open.mockRestore();
   }
 
+  window.dispatchEvent(new Event('focus'));
+  http.expectOne('/api/workspaces/candy/github').flush(connection);
+  http
+    .expectOne('/api/workspaces/candy/environments')
+    .flush([{ id: 'shop', name: 'Candy Shop', baseUrl: 'https://academybugs.com/' }]);
+  await Promise.resolve();
+  await Promise.resolve();
+  await fixture.whenStable();
+  fixture.detectChanges();
   button('Edit').click();
   fixture.detectChanges();
   http

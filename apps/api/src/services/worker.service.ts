@@ -17,11 +17,12 @@ import {
 } from 'node:crypto';
 import {access, rename, rm} from 'node:fs/promises';
 import path from 'node:path';
-import {isRunFinished, Run, RUN_STATUS} from '../models';
+import {isRunFinished, Run, RUN_STATUS, TASK_STATUS} from '../models';
 import {
   RunEventRepository,
   RunRepository,
   RunResultRepository,
+  TaskRepository,
 } from '../repositories';
 import {
   WorkerMessage,
@@ -75,6 +76,7 @@ export class WorkerService {
     @repository(RunRepository) private runs: RunRepository,
     @repository(RunEventRepository) private events: RunEventRepository,
     @repository(RunResultRepository) private results: RunResultRepository,
+    @repository(TaskRepository) private tasks: TaskRepository,
     @service(GithubConnectionService)
     private githubConnections: GithubConnectionService,
     @inject(WORKER_SERVICE_OPTIONS_BINDING_KEY, {optional: true})
@@ -171,6 +173,28 @@ export class WorkerService {
     }
 
     return {run, viewToken};
+  }
+
+  async enqueueRecordedRun(id: string): Promise<void> {
+    if (this.stopping)
+      throw new HttpErrors.ServiceUnavailable(
+        'Worker infrastructure is stopping',
+      );
+    const run = await this.runs.findById(id);
+
+    if (run.status !== RUN_STATUS.Queued) return;
+
+    await this.initialize();
+    await this.queue!.add(
+      run.scriptName,
+      {runId: run.id},
+      {
+        jobId: run.id,
+        attempts: 1,
+        removeOnComplete: {count: 1000},
+        removeOnFail: {count: 1000},
+      },
+    );
   }
 
   async listOwned(
@@ -518,7 +542,17 @@ export class WorkerService {
   }
 
   private initialize(): Promise<void> {
-    this.initializing ??= this.connect();
+    this.initializing ??= this.connect().catch(async error => {
+      this.publisher?.disconnect();
+      this.subscriber?.disconnect();
+      await Promise.allSettled([this.worker?.close(true), this.queue?.close()]);
+      this.worker = undefined;
+      this.queue = undefined;
+      this.publisher = undefined;
+      this.subscriber = undefined;
+      this.initializing = undefined;
+      throw error;
+    });
 
     return this.initializing;
   }
@@ -574,6 +608,17 @@ export class WorkerService {
     }
 
     const run = await this.runs.findById(id);
+
+    if (run.taskId) {
+      await this.tasks.updateAll(
+        {status: TASK_STATUS.Running, startedAt: run.startedAt ?? new Date()},
+        {
+          id: run.taskId,
+          status: {inq: [TASK_STATUS.Pending, TASK_STATUS.Queued]},
+        },
+      );
+    }
+
     let exampleUrl = this.exampleUrl;
 
     if (run.workspaceId) {
@@ -806,6 +851,23 @@ export class WorkerService {
 
       if (count) {
         const run = await this.runs.findById(id, undefined, options);
+
+        if (run.taskId) {
+          await this.tasks.updateAll(
+            {status: result.status, endedAt: new Date()},
+            {
+              id: run.taskId,
+              status: {
+                inq: [
+                  TASK_STATUS.Pending,
+                  TASK_STATUS.Queued,
+                  TASK_STATUS.Running,
+                ],
+              },
+            },
+            options,
+          );
+        }
 
         if (run.agentInput) {
           const agentResult: AgentResult = result.agentResult ?? {

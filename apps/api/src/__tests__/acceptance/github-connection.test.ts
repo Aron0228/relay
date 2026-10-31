@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/naming-convention -- Mock GitHub REST protocol. */
-import {generateKeyPairSync, randomInt, verify} from 'node:crypto';
+import {createHash, generateKeyPairSync, randomInt, verify} from 'node:crypto';
 import {
   afterAll,
   beforeAll,
@@ -20,6 +20,7 @@ import {
 import {
   EnvironmentRepository,
   GithubInstallationRepository,
+  InstallationIntentRepository,
   GithubRepositoryRepository,
   UserRepository,
   WorkspaceMemberRepository,
@@ -62,6 +63,7 @@ describe('GitHub App connections', () => {
     denyToken = false;
   const hashes: string[] = [];
   let disconnectDuringRead = false;
+  let membersRead = true;
 
   function remoteInstallation(id = installationGithubId) {
     return {
@@ -72,7 +74,7 @@ describe('GitHub App connections', () => {
         type: organization ? 'Organization' : 'User',
       },
       suspended_at: suspended ? new Date().toISOString() : null,
-      permissions: {issues: 'write'},
+      permissions: {issues: 'write', members: membersRead ? 'read' : undefined},
     };
   }
 
@@ -146,6 +148,7 @@ describe('GitHub App connections', () => {
     identityMatches = true;
     denyToken = false;
     disconnectDuringRead = false;
+    membersRead = true;
     fetchMock.mockReset();
     fetchMock.mockImplementation(async (url: string, options: RequestInit) => {
       const path = new URL(url).pathname;
@@ -301,6 +304,132 @@ describe('GitHub App connections', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it('automatically links a completed installation using a hashed single-use workspace intent', async () => {
+    const intents = await app.get<InstallationIntentRepository>(
+      'repositories.InstallationIntentRepository',
+    );
+    const start = await client
+      .get(`${path()}/installation-url`)
+      .set('Authorization', `Bearer ${finnToken}`)
+      .expect(200);
+    const state = new URL(start.body.url).searchParams.get('state')!;
+    const hash = createHash('sha256').update(state).digest('hex');
+    expect(await intents.findById(hash)).toMatchObject({
+      workspaceId,
+      userId: finnId,
+    });
+    expect(await intents.exists(state)).toBe(false);
+    const response = await client
+      .get('/api/github/installations/callback')
+      .query({
+        state,
+        installation_id: installationGithubId,
+        setup_action: 'install',
+      })
+      .expect(200);
+    expect(response.headers['content-type']).toContain('text/html');
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(
+      await installations.findOne({where: {githubId: installationGithubId}}),
+    ).toMatchObject({workspaceId, connectedBy: finnId});
+    expect(await intents.exists(hash)).toBe(false);
+    const next = await client
+      .get(`${path()}/installation-url`)
+      .set('Authorization', `Bearer ${finnToken}`)
+      .expect(200);
+    const nextState = new URL(next.body.url).searchParams.get('state')!;
+    const simultaneous = await Promise.all(
+      [0, 1].map(() =>
+        client
+          .get('/api/github/installations/callback')
+          .query({state: nextState, installation_id: installationGithubId}),
+      ),
+    );
+    expect(simultaneous.map(result => result.status).sort()).toEqual([
+      200, 400,
+    ]);
+    expect(await installations.count({githubId: installationGithubId})).toEqual(
+      {count: 1},
+    );
+
+    await client
+      .get('/api/github/installations/callback')
+      .query({
+        state,
+        installation_id: installationGithubId,
+        setup_action: 'install',
+      })
+      .expect(400);
+  });
+
+  it('does not guess a workspace from an installation callback without state', async () => {
+    const before = await installations.count();
+    const response = await client
+      .get('/api/github/installations/callback')
+      .query({
+        installation_id: installationGithubId + 123,
+        setup_action: 'install',
+      })
+      .expect(200);
+    expect(response.text).toContain('Connect installation');
+    expect(await installations.count()).toEqual(before);
+    await client
+      .get('/api/github/installations/callback')
+      .query({installation_id: installationGithubId, setup_action: 'update'})
+      .expect(200);
+  });
+
+  it('rejects expired intents and rechecks workspace and GitHub permissions on callback', async () => {
+    const intents = await app.get<InstallationIntentRepository>(
+      'repositories.InstallationIntentRepository',
+    );
+    const start = async () => {
+      const response = await client
+        .get(`${path()}/installation-url`)
+        .set('Authorization', `Bearer ${finnToken}`)
+        .expect(200);
+      return new URL(response.body.url).searchParams.get('state')!;
+    };
+    const expired = await start();
+    await intents.updateById(
+      createHash('sha256').update(expired).digest('hex'),
+      {expiresAt: new Date(0)},
+    );
+    await client
+      .get('/api/github/installations/callback')
+      .query({
+        state: expired,
+        installation_id: installationGithubId,
+        setup_action: 'install',
+      })
+      .expect(400);
+    const revoked = await start();
+    await members.updateAll({role: 'member'}, {workspaceId, userId: finnId});
+
+    try {
+      await client
+        .get('/api/github/installations/callback')
+        .query({
+          state: revoked,
+          installation_id: installationGithubId,
+          setup_action: 'install',
+        })
+        .expect(403);
+    } finally {
+      await members.updateAll({role: 'admin'}, {workspaceId, userId: finnId});
+    }
+
+    const foreign = await start();
+    await client
+      .get('/api/github/installations/callback')
+      .query({
+        state: foreign,
+        installation_id: installationGithubId + 1,
+        setup_action: 'install',
+      })
+      .expect(403);
+  });
+
   it('provides install and management links only to workspace admins, including suspended installations', async () => {
     await client
       .get(`${path()}/installation-url`)
@@ -311,9 +440,11 @@ describe('GitHub App connections', () => {
       .get(`${path()}/installation-url`)
       .set('Authorization', `Bearer ${finnToken}`)
       .expect(200);
-    expect(install.body).toEqual({
-      url: 'https://github.com/apps/relay-bmo/installations/new',
-    });
+    const installationUrl = new URL(install.body.url);
+    expect(installationUrl.origin + installationUrl.pathname).toBe(
+      'https://github.com/apps/relay-bmo/installations/new',
+    );
+    expect(installationUrl.searchParams.get('state')).toMatch(/^[0-9a-f]{64}$/);
     const installationId = await connect();
     suspended = true;
     const settings = await client
@@ -354,6 +485,25 @@ describe('GitHub App connections', () => {
       .set('Authorization', `Bearer ${finnToken}`)
       .send({githubId: installationGithubId + 1})
       .expect(403);
+  });
+
+  it('explains the missing organization Members permission instead of returning a generic 403', async () => {
+    organization = true;
+    membersRead = false;
+    const response = await client
+      .post(`${path()}/installations`)
+      .set('Authorization', `Bearer ${finnToken}`)
+      .send({githubId: installationGithubId})
+      .expect(403);
+    expect(response.body.error.message).toContain('Members (read)');
+    expect(response.body.error.message).toContain(
+      'approve the updated permissions',
+    );
+    expect(
+      fetchMock.mock.calls.some(([url]) =>
+        String(url).includes('/memberships/'),
+      ),
+    ).toBe(false);
   });
 
   it('checks active organization ownership and the stable identity behind a login', async () => {

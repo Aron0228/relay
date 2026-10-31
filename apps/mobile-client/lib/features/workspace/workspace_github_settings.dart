@@ -26,25 +26,37 @@ class WorkspaceGithubSettings extends StatefulWidget {
       _WorkspaceGithubSettingsState();
 }
 
-class _WorkspaceGithubSettingsState extends State<WorkspaceGithubSettings> {
+class _WorkspaceGithubSettingsState extends State<WorkspaceGithubSettings>
+    with WidgetsBindingObserver {
   late final _api = widget.api ?? WorkspaceApi(widget.sessions);
   List<Map<String, dynamic>> _installations = [],
       _repositories = [],
       _environments = [];
   bool _busy = false;
+  bool _waitingForGithub = false;
   String? _error;
   String get _path => '/workspaces/${widget.workspaceId}/github';
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _perform(_load);
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _api.close();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _waitingForGithub) {
+      _waitingForGithub = false;
+      _perform(_load);
+    }
   }
 
   Future<void> _perform(Future<void> Function() action) async {
@@ -90,11 +102,13 @@ class _WorkspaceGithubSettingsState extends State<WorkspaceGithubSettings> {
           : '$_path/installations/$installationId/settings-url';
       final data = await _api.request('GET', path) as Map<String, dynamic>;
       final url = Uri.parse(data['url'] as String);
+      _waitingForGithub = true;
       final opened =
           await (widget.openUrl?.call(url) ??
               launchUrl(url, mode: LaunchMode.externalApplication));
 
       if (!opened) {
+        _waitingForGithub = false;
         throw Exception('Could not open the GitHub installation page.');
       }
     });

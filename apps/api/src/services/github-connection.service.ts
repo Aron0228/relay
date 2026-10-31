@@ -1,10 +1,12 @@
+import {createHash, randomBytes} from 'node:crypto';
 import {BindingScope, injectable, service} from '@loopback/core';
 import {IsolationLevel, repository, Transaction} from '@loopback/repository';
 import {HttpErrors} from '@loopback/rest';
-import {allowedOrigins, approvedUrl} from '../ai/config';
+import {allowedOrigins, approvedUrl, positiveInteger} from '../ai/config';
 import {
   EnvironmentRepository,
   GithubInstallationRepository,
+  InstallationIntentRepository,
   GithubRepositoryRepository,
   TaskRepository,
   UserRepository,
@@ -20,6 +22,8 @@ export class GithubConnectionService {
   constructor(
     @service(WorkspaceService) private workspaces: WorkspaceService,
     @service(GithubAppService) private github: GithubAppService,
+    @repository(InstallationIntentRepository)
+    private intents: InstallationIntentRepository,
     @repository(GithubInstallationRepository)
     private installations: GithubInstallationRepository,
     @repository(GithubRepositoryRepository)
@@ -62,7 +66,22 @@ export class GithubConnectionService {
   ) {
     await this.workspaces.requireMember(workspaceId, userId, true);
 
-    if (!installationId) return {url: await this.github.installationUrl()};
+    if (!installationId) {
+      const url = new URL(await this.github.installationUrl());
+      const state = randomBytes(32).toString('hex');
+      const ttlMs =
+        positiveInteger('GITHUB_INSTALLATION_STATE_TTL_SECONDS', 600) * 1000;
+      await this.intents.deleteAll({expiresAt: {lt: new Date()}});
+      await this.intents.create({
+        stateHash: this.hashState(state),
+        workspaceId,
+        userId,
+        expiresAt: new Date(Date.now() + ttlMs),
+      });
+      url.searchParams.set('state', state);
+
+      return {url: url.toString()};
+    }
 
     const installation = await this.installations.findOne({
       where: {
@@ -80,6 +99,30 @@ export class GithubConnectionService {
         Number(installation.githubId),
       ),
     };
+  }
+
+  private hashState(state: string) {
+    return createHash('sha256').update(state).digest('hex');
+  }
+
+  async completeInstallation(state: string, githubId: number, action: string) {
+    if (
+      !/^[0-9a-f]{64}$/.test(state) ||
+      !Number.isSafeInteger(githubId) ||
+      githubId <= 0 ||
+      !['install', 'update'].includes(action)
+    ) {
+      throw new HttpErrors.BadRequest('Invalid GitHub installation callback');
+    }
+
+    const intent = await this.intents.consume(this.hashState(state));
+
+    if (!intent)
+      throw new HttpErrors.BadRequest(
+        'GitHub installation request is invalid, expired or already used',
+      );
+
+    return this.connect(intent.workspaceId, intent.userId, githubId);
   }
 
   async available(workspaceId: string, userId: string) {
@@ -390,6 +433,15 @@ export class GithubConnectionService {
 
     if (!task) throw new HttpErrors.NotFound('Task not found');
 
-    return this.resolveTarget(task.repositoryId, workspaceId, environmentId);
+    await this.workspaces.requireMember(workspaceId, task.requestedBy);
+
+    const target = await this.resolveTarget(
+      task.repositoryId,
+      workspaceId,
+      environmentId,
+    );
+    await this.workspaces.requireMember(workspaceId, task.requestedBy);
+
+    return target;
   }
 }

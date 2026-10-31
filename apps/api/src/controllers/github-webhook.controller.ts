@@ -24,7 +24,10 @@ export class GithubWebhookController {
       '401': {description: 'Missing or invalid GitHub signature'},
       '413': {description: 'Payload exceeds 25 MB'},
       '415': {description: 'Only uncompressed application/json is supported'},
-      '503': {description: 'Webhook secret is not configured'},
+      '503': {
+        description:
+          'Webhook secret is missing or reproduction dispatch is temporarily unavailable',
+      },
     },
   })
   receive(
@@ -35,7 +38,6 @@ export class GithubWebhookController {
     body: Buffer,
     @inject(RestBindings.Http.REQUEST) request: Request,
   ): Promise<{duplicate: boolean}> {
-    console.log('webhook!');
     const signature = request.get('X-Hub-Signature-256');
     const deliveryId = request.get('X-GitHub-Delivery');
     const eventType = request.get('X-GitHub-Event');
