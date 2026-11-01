@@ -14,10 +14,13 @@ export interface WorkerInput {
   exampleUrl: string;
   actionDelayMs: number;
   agentInput?: AgentInput;
+  leaseDeadline?: number;
 }
 
 export type WorkerCommand =
-  {type: 'start'; input: WorkerInput} | {type: 'cancel'};
+  | {type: 'start'; input: WorkerInput}
+  | {type: 'heartbeat'; deadline: number}
+  | {type: 'cancel'};
 
 export interface WorkerResult {
   status: 'completed' | 'failed' | 'cancelled';

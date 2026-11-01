@@ -134,6 +134,13 @@ export class Run extends Entity {
 
   @property({
     type: 'date',
+    defaultFn: 'now',
+    postgresql: {columnName: 'queued_at', dataType: 'timestamptz'},
+  })
+  queuedAt!: Date;
+
+  @property({
+    type: 'date',
     postgresql: {columnName: 'started_at', dataType: 'timestamptz'},
   })
   startedAt?: Date | null;

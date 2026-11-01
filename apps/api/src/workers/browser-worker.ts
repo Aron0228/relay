@@ -14,7 +14,16 @@ import {exampleTodo} from './scripts/example-todo';
 let browser: PlaywrightInterface | undefined;
 let cancelled = false;
 let started = false;
+let leaseWatchdog: ReturnType<typeof setTimeout> | undefined;
 const cancellation = new AbortController();
+
+function heartbeat(deadline: number): void {
+  clearTimeout(leaseWatchdog);
+  leaseWatchdog = setTimeout(
+    () => process.exit(1),
+    Math.max(0, deadline - Date.now()),
+  );
+}
 
 function emit(message: WorkerMessage): void {
   if (process.connected) {
@@ -96,10 +105,17 @@ async function execute(input: WorkerInput): Promise<void> {
 }
 
 process.on('message', (command: WorkerCommand) => {
-  if (command.type === 'cancel') {
+  if (command.type === 'heartbeat') {
+    heartbeat(command.deadline);
+  } else if (command.type === 'cancel') {
     cancel().catch(() => {});
   } else if (!started) {
     started = true;
+
+    if (command.input.leaseDeadline) {
+      heartbeat(command.input.leaseDeadline);
+    }
+
     execute(command.input).catch(error => {
       console.error(error);
       process.exit(1);
@@ -114,6 +130,7 @@ process.on('SIGINT', () => {
   cancel().catch(() => {});
 });
 process.on('disconnect', () => {
+  setTimeout(() => process.exit(1), 5000).unref();
   cancel().then(
     () => {
       if (!started) {

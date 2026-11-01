@@ -1,4 +1,5 @@
 import {Queue} from 'bullmq';
+import {fork} from 'node:child_process';
 import {randomInt, randomUUID} from 'node:crypto';
 import {mkdtemp, readFile, rm} from 'node:fs/promises';
 import {createServer, Server} from 'node:http';
@@ -134,6 +135,26 @@ describe('On-demand Playwright workers (e2e)', () => {
 
     return runs.findById(id);
   }
+
+  it('terminates a child that stops receiving capacity heartbeats', async () => {
+    const child = fork(
+      path.resolve(__dirname, '../../../dist/workers/browser-worker.js'),
+      [],
+      {
+        stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+      },
+    );
+
+    try {
+      const exited = new Promise<number | null>(resolve =>
+        child.once('exit', resolve),
+      );
+      child.send({type: 'heartbeat', deadline: Date.now() + 200});
+      expect(await exited).toBe(1);
+    } finally {
+      if (child.exitCode === null) child.kill('SIGKILL');
+    }
+  });
 
   it('requires authentication and only allows registered scripts', async () => {
     await client
