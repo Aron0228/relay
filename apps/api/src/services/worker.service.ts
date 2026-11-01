@@ -5,7 +5,8 @@ import {GithubConnectionService} from './github-connection.service';
 import {AgentInput, AgentResult, AGENT_VERDICT} from '../ai/types';
 import {approvedUrl, allowedOrigins, positiveInteger} from '../ai/config';
 import {AGENT_PROMPT_VERSION} from '../ai/system-prompt';
-import {Job, Queue, Worker} from 'bullmq';
+import {DelayedError, Job, Queue, Worker} from 'bullmq';
+import {WorkerCapacityService} from './worker-capacity.service';
 import Redis from 'ioredis';
 import {execFile, fork} from 'node:child_process';
 import {promisify} from 'node:util';
@@ -71,6 +72,13 @@ export class WorkerService {
   private subscriber?: Redis;
   private initializing?: Promise<void>;
   private stopping = false;
+  private recovery?: ReturnType<typeof setInterval>;
+  private recovering = false;
+  private readonly killWorkers = new Map<string, () => void>();
+  private readonly workerHeartbeats = new Map<
+    string,
+    (deadline: number) => void
+  >();
 
   constructor(
     @repository(RunRepository) private runs: RunRepository,
@@ -79,6 +87,7 @@ export class WorkerService {
     @repository(TaskRepository) private tasks: TaskRepository,
     @service(GithubConnectionService)
     private githubConnections: GithubConnectionService,
+    @service(WorkerCapacityService) private capacity: WorkerCapacityService,
     @inject(WORKER_SERVICE_OPTIONS_BINDING_KEY, {optional: true})
     private options: WorkerServiceOptions = {},
   ) {
@@ -154,16 +163,7 @@ export class WorkerService {
 
     try {
       await this.event(run.id, 'run.queued', {scriptName});
-      await this.queue!.add(
-        scriptName,
-        {runId: run.id},
-        {
-          jobId: run.id,
-          attempts: 1,
-          removeOnComplete: {count: 1000},
-          removeOnFail: {count: 1000},
-        },
-      );
+      await this.queueRun(run);
     } catch (error) {
       await this.finish(run.id, {
         status: RUN_STATUS.Failed,
@@ -185,6 +185,11 @@ export class WorkerService {
     if (run.status !== RUN_STATUS.Queued) return;
 
     await this.initialize();
+    await this.queueRun(run);
+  }
+
+  private async queueRun(run: Run): Promise<void> {
+    await this.capacity.register(this.queueName, run.id);
     await this.queue!.add(
       run.scriptName,
       {runId: run.id},
@@ -195,6 +200,7 @@ export class WorkerService {
         removeOnFail: {count: 1000},
       },
     );
+    await this.capacity.dispatched(run.id);
   }
 
   async listOwned(
@@ -525,6 +531,7 @@ export class WorkerService {
 
   async stop(): Promise<void> {
     this.stopping = true;
+    clearInterval(this.recovery);
 
     for (const cancel of this.cancellations.values()) {
       cancel();
@@ -576,16 +583,21 @@ export class WorkerService {
     await this.subscriber.subscribe(this.cancelChannel);
 
     this.queue = new Queue<RunJob>(this.queueName, {connection});
-    this.worker = new Worker<RunJob>(this.queueName, job => this.execute(job), {
-      connection: {...connection, maxRetriesPerRequest: null},
-      concurrency: this.concurrency,
-      maxStalledCount: 0,
-    });
+    this.worker = new Worker<RunJob>(
+      this.queueName,
+      (job, token) => this.execute(job, token),
+      {
+        connection: {...connection, maxRetriesPerRequest: null},
+        concurrency: this.concurrency,
+        maxStalledCount: 0,
+      },
+    );
     this.worker.on('error', error =>
       console.error('Worker queue error:', error.message),
     );
     this.worker.on('failed', (job, error) => {
       if (job) {
+        this.killWorkers.get(job.data.runId)?.();
         this.finish(job.data.runId, {
           status: RUN_STATUS.Failed,
           error: error.message,
@@ -594,19 +606,117 @@ export class WorkerService {
     });
 
     await this.worker.waitUntilReady();
+    this.recovery = setInterval(() => {
+      this.recoverExpired().catch(error =>
+        console.error('Worker recovery failed:', error.message),
+      );
+    }, 1000);
+    this.recovery.unref();
+    await this.recoverExpired();
   }
 
-  private async execute(job: Job<RunJob>): Promise<void> {
-    const id = job.data.runId;
-    const {count} = await this.runs.updateAll(
-      {status: RUN_STATUS.Running, startedAt: new Date()},
-      {id, status: RUN_STATUS.Queued},
-    );
+  private async recoverExpired(): Promise<void> {
+    if (this.recovering || this.stopping) return;
 
-    if (!count) {
-      return;
+    this.recovering = true;
+
+    try {
+      await this.capacity.discardFinished(this.queueName);
+
+      for (const pending of await this.capacity.undispatched(this.queueName)) {
+        await this.queueRun(await this.runs.findById(pending.id));
+      }
+
+      for (const slot of await this.capacity.expired(this.queueName)) {
+        this.killWorkers.get(slot.id)?.();
+        await this.finish(slot.id, {
+          status: RUN_STATUS.Failed,
+          error: 'Worker capacity lease expired',
+        });
+        await this.capacity.release(slot.id, slot.token);
+      }
+    } finally {
+      this.recovering = false;
+    }
+  }
+
+  private async execute(job: Job<RunJob>, jobToken?: string): Promise<void> {
+    const id = job.data.runId;
+    const pending = await this.runs.findById(id);
+
+    if (pending.status !== RUN_STATUS.Queued || pending.cancelRequested) return;
+
+    await this.capacity.register(this.queueName, id);
+    const reservationStartedAt = Date.now();
+    const token = await this.capacity.claim(this.queueName, id);
+
+    if (!token) {
+      await job.moveToDelayed(Date.now() + 250, jobToken);
+      throw new DelayedError();
     }
 
+    let lost = false;
+    let renewing = false;
+    const loseLease = () => {
+      lost = true;
+      this.killWorkers.get(id)?.();
+    };
+    const leaseMs = this.capacity.leaseSeconds * 1000;
+    const watchdogMs = leaseMs * 0.6;
+    let deadline = reservationStartedAt + watchdogMs;
+    let watchdog = setTimeout(loseLease, Math.max(0, deadline - Date.now()));
+    const heartbeat = setInterval(() => {
+      if (renewing || lost) return;
+
+      renewing = true;
+      const renewedDeadline = Date.now() + watchdogMs;
+
+      this.capacity
+        .renew(id, token)
+        .then(renewed => {
+          if (!renewed) {
+            loseLease();
+          } else if (!lost) {
+            clearTimeout(watchdog);
+            deadline = renewedDeadline;
+            watchdog = setTimeout(
+              loseLease,
+              Math.max(0, deadline - Date.now()),
+            );
+            this.workerHeartbeats.get(id)?.(deadline);
+          }
+        })
+        .catch(loseLease)
+        .finally(() => {
+          renewing = false;
+        });
+    }, leaseMs / 5);
+
+    try {
+      await this.event(id, 'run.started', {});
+      await this.executeRun(
+        id,
+        () => lost,
+        () => deadline,
+      );
+    } catch (error) {
+      await this.finish(id, {
+        status: RUN_STATUS.Failed,
+        error: (error as Error).message,
+      });
+      throw error;
+    } finally {
+      clearTimeout(watchdog);
+      clearInterval(heartbeat);
+      await this.capacity.release(id, token);
+    }
+  }
+
+  private async executeRun(
+    id: string,
+    leaseLost: () => boolean,
+    leaseDeadline: () => number,
+  ): Promise<void> {
     const run = await this.runs.findById(id);
 
     if (run.taskId) {
@@ -663,6 +773,10 @@ export class WorkerService {
       }
     }
 
+    if (leaseLost() || Date.now() >= leaseDeadline() || this.stopping) {
+      throw new Error('Worker capacity lease lost or infrastructure stopping');
+    }
+
     const child = fork(
       path.join(__dirname, '../workers/browser-worker.js'),
       [],
@@ -693,6 +807,12 @@ export class WorkerService {
     };
 
     this.cancellations.set(id, terminate);
+    this.killWorkers.set(id, () => {
+      child.kill('SIGKILL');
+    });
+    this.workerHeartbeats.set(id, deadline => {
+      if (child.connected) child.send({type: 'heartbeat', deadline}, () => {});
+    });
 
     const timeout = setTimeout(
       () => {
@@ -750,6 +870,7 @@ export class WorkerService {
         type: 'start',
         input: {
           runId: id,
+          leaseDeadline: leaseDeadline(),
           scriptName: run.scriptName as WorkerScriptName,
           agentInput: run.agentInput,
           videoDirectory: path.dirname(this.videoPath(id)),
@@ -770,7 +891,13 @@ export class WorkerService {
 
       const current = await this.runs.findById(id);
 
-      if (timedOut) {
+      if (leaseLost()) {
+        result = {
+          ...result!,
+          status: RUN_STATUS.Failed,
+          error: 'Worker capacity lease lost',
+        };
+      } else if (timedOut) {
         result = {
           ...result!,
           status: RUN_STATUS.Failed,
@@ -798,6 +925,8 @@ export class WorkerService {
     } finally {
       clearTimeout(timeout);
       this.cancellations.delete(id);
+      this.killWorkers.delete(id);
+      this.workerHeartbeats.delete(id);
 
       if (forceStop) {
         clearTimeout(forceStop);
