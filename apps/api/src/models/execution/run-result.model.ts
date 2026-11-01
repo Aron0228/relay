@@ -1,6 +1,13 @@
 import {Entity, model, property} from '@loopback/repository';
 import {AgentResult} from '../../ai/types';
 
+export const RUN_RESULT_TYPE = {
+  BrowserTest: 'browser-test',
+  IssueReproduction: 'issue-reproduction',
+} as const;
+export type RunResultType =
+  (typeof RUN_RESULT_TYPE)[keyof typeof RUN_RESULT_TYPE];
+
 @model({settings: {postgresql: {schema: 'execution', table: 'run_result'}}})
 export class RunResult extends Entity {
   @property({
@@ -18,8 +25,12 @@ export class RunResult extends Entity {
   })
   runId!: string;
 
-  @property({type: 'string', default: 'browser-test'})
-  type!: string;
+  @property({
+    type: 'string',
+    default: RUN_RESULT_TYPE.BrowserTest,
+    jsonSchema: {enum: Object.values(RUN_RESULT_TYPE)},
+  })
+  type!: RunResultType;
 
   @property({type: 'string', required: true})
   status!: AgentResult['verdict'];

@@ -1,6 +1,11 @@
 import {Entity, model, property} from '@loopback/repository';
 
-@model({settings: {postgresql: {schema: 'execution', table: 'run_event'}}})
+@model({
+  settings: {
+    forceId: false,
+    postgresql: {schema: 'execution', table: 'run_event'},
+  },
+})
 export class RunEvent extends Entity {
   @property({
     type: 'string',
