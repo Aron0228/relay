@@ -67,7 +67,9 @@ async function execute(input: WorkerInput): Promise<void> {
       );
 
       if (
-        ['provider_error', 'timeout'].includes(result.agentResult.stopReason)
+        ['provider_error', 'browser_error', 'timeout'].includes(
+          result.agentResult.stopReason,
+        )
       ) {
         result.status = 'failed';
         result.error = result.agentResult.summary;

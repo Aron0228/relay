@@ -3,7 +3,13 @@ import {PlaywrightInterface} from '../workers/playwright.interface';
 import {BROWSER_TOOLS, BrowserTools, parseTextVerdict} from './browser-tools';
 import {approvedUrl, allowedOrigins, positiveInteger} from './config';
 import {AGENT_PROMPT_VERSION, AGENT_SYSTEM_PROMPT} from './system-prompt';
+import {ReproductionSession, REPRODUCTION_TOOLS} from './reproduction-session';
 import {
+  REPRODUCTION_PROMPT_VERSION,
+  REPRODUCTION_SYSTEM_PROMPT,
+} from './reproduction-prompt';
+import {
+  AgentConclusion,
   AgentEvent,
   AgentInput,
   AgentResult,
@@ -38,19 +44,33 @@ export class BrowserAgent {
   ): Promise<AgentResult> {
     const deadline = AbortSignal.timeout(this.timeoutMs);
     const signal = AbortSignal.any([cancellation, deadline]);
-    const tools = new BrowserTools(this.browser, allowedOrigins());
+    const reproduction = input.reproduction
+      ? new ReproductionSession(input.reproduction, this.browser, this.emit)
+      : undefined;
+    const tools =
+      reproduction ?? new BrowserTools(this.browser, allowedOrigins());
+    const promptVersion = reproduction
+      ? REPRODUCTION_PROMPT_VERSION
+      : AGENT_PROMPT_VERSION;
     const messages: ChatMessage[] = [
-      {role: 'system', content: AGENT_SYSTEM_PROMPT},
+      {
+        role: 'system',
+        content: reproduction
+          ? REPRODUCTION_SYSTEM_PROMPT
+          : AGENT_SYSTEM_PROMPT,
+      },
       {
         role: 'user',
         content: JSON.stringify({
           goal: input.prompt,
+          ...(reproduction ? {reproduction: reproduction.context()} : {}),
           targetUrl: input.targetUrl,
           maxTurns: this.maxTurns,
           maxToolCalls: this.maxToolCalls,
         }),
       },
     ];
+    let phase: 'browser' | 'provider' = 'browser';
     let turns = 0;
     let toolCalls = 0;
     let failedToolCalls = 0;
@@ -65,16 +85,14 @@ export class BrowserAgent {
     const conclude = (
       stopReason: AgentStopReason,
       summary: string,
-      details?: Pick<
-        AgentResult,
-        'verdict' | 'confidence' | 'steps' | 'observations'
-      >,
+      details?: AgentConclusion,
     ): AgentResult => {
       const result: AgentResult = {
         verdict: 'inconclusive',
         confidence: 0,
         steps: [],
         observations: [],
+        ...reproduction?.inconclusive(),
         ...details,
         summary,
         stopReason,
@@ -83,7 +101,7 @@ export class BrowserAgent {
         failedToolCalls,
         tokenUsage: {...tokenUsage},
         model: this.provider.model,
-        promptVersion: AGENT_PROMPT_VERSION,
+        promptVersion,
       };
 
       this.emit('agent.completed', {...result});
@@ -94,7 +112,7 @@ export class BrowserAgent {
     try {
       this.emit('agent.started', {
         model: this.provider.model,
-        promptVersion: AGENT_PROMPT_VERSION,
+        promptVersion,
         maxTurns: this.maxTurns,
         maxToolCalls: this.maxToolCalls,
       });
@@ -102,9 +120,10 @@ export class BrowserAgent {
       await this.browser.navigate(
         approvedUrl(input.targetUrl, allowedOrigins()),
       );
+      const initialObservation = await this.browser.observe();
       messages.push({
         role: 'user',
-        content: `Initial browser observation:\n${this.clip(await this.browser.observe())}`,
+        content: `Initial browser observation:\n${this.clip(reproduction ? JSON.stringify(reproduction.observation(initialObservation)) : initialObservation)}`,
       });
 
       while (turns < this.maxTurns) {
@@ -137,9 +156,10 @@ export class BrowserAgent {
           });
         }
 
+        phase = 'provider';
         const response = await this.provider.complete(
           messages,
-          BROWSER_TOOLS,
+          reproduction ? REPRODUCTION_TOOLS : BROWSER_TOOLS,
           signal,
           finishing ? 'finish' : undefined,
         );
@@ -162,7 +182,9 @@ export class BrowserAgent {
         messages.push(message);
 
         const textVerdict = !response.tool_calls?.length
-          ? parseTextVerdict(response.content)
+          ? reproduction
+            ? reproduction.parseTextVerdict(response.content)
+            : parseTextVerdict(response.content)
           : undefined;
 
         if (response.content && !textVerdict) {
@@ -267,7 +289,7 @@ export class BrowserAgent {
       }
 
       return conclude(
-        'provider_error',
+        phase === 'browser' ? 'browser_error' : 'provider_error',
         `The agent could not continue: ${(error as Error).message}`,
       );
     }
