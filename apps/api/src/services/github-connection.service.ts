@@ -252,6 +252,7 @@ export class GithubConnectionService {
       return {
         ...environment.toJSON(),
         id: environment.id,
+        name: environment.name,
         baseUrl: approvedUrl(environment.baseUrl, allowedOrigins()),
       };
     } catch {

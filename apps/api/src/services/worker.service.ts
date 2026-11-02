@@ -5,6 +5,8 @@ import {GithubConnectionService} from './github-connection.service';
 import {AgentInput, AgentResult, AGENT_VERDICT} from '../ai/types';
 import {approvedUrl, allowedOrigins, positiveInteger} from '../ai/config';
 import {AGENT_PROMPT_VERSION} from '../ai/system-prompt';
+import {reproductionInput} from '../ai/reproduction-input';
+import {ReproductionResultService} from './reproduction-result.service';
 import {DelayedError, Job, Queue, Worker} from 'bullmq';
 import {WorkerCapacityService} from './worker-capacity.service';
 import Redis from 'ioredis';
@@ -18,8 +20,16 @@ import {
 } from 'node:crypto';
 import {access, rename, rm} from 'node:fs/promises';
 import path from 'node:path';
-import {isRunFinished, Run, RUN_STATUS, TASK_STATUS} from '../models';
 import {
+  isRunFinished,
+  Run,
+  RUN_RESULT_TYPE,
+  RUN_STAGE,
+  RUN_STATUS,
+  TASK_STATUS,
+} from '../models';
+import {
+  GithubIssueRepository,
   RunEventRepository,
   RunRepository,
   RunResultRepository,
@@ -85,6 +95,9 @@ export class WorkerService {
     @repository(RunEventRepository) private events: RunEventRepository,
     @repository(RunResultRepository) private results: RunResultRepository,
     @repository(TaskRepository) private tasks: TaskRepository,
+    @repository(GithubIssueRepository) private issues: GithubIssueRepository,
+    @service(ReproductionResultService)
+    private reproductionResults: ReproductionResultService,
     @service(GithubConnectionService)
     private githubConnections: GithubConnectionService,
     @service(WorkerCapacityService) private capacity: WorkerCapacityService,
@@ -758,10 +771,19 @@ export class WorkerService {
         );
         exampleUrl = target.targetUrl;
 
-        if (run.agentInput) {
+        if (run.stage === RUN_STAGE.Reproduction) {
+          const task = await this.tasks.findById(run.taskId);
+          const issue = await this.issues.findById(task.issueId);
+
+          run.agentInput = reproductionInput(task, issue, {
+            ...target.environment,
+            baseUrl: target.targetUrl,
+          });
+        } else if (run.agentInput) {
           run.agentInput = {...run.agentInput, targetUrl: target.targetUrl};
-          await this.runs.updateById(id, {agentInput: run.agentInput});
         }
+
+        await this.runs.updateById(id, {agentInput: run.agentInput});
       } catch {
         await this.finish(run.id, {
           status: RUN_STATUS.Cancelled,
@@ -981,7 +1003,7 @@ export class WorkerService {
       if (count) {
         const run = await this.runs.findById(id, undefined, options);
 
-        if (run.taskId) {
+        if (run.taskId && run.stage !== RUN_STAGE.Reproduction) {
           await this.tasks.updateAll(
             {status: result.status, endedAt: new Date()},
             {
@@ -999,7 +1021,7 @@ export class WorkerService {
         }
 
         if (run.agentInput) {
-          const agentResult: AgentResult = result.agentResult ?? {
+          let agentResult: AgentResult = result.agentResult ?? {
             verdict: AGENT_VERDICT.Inconclusive,
             summary: result.error ?? `Run ${result.status}`,
             confidence: 0,
@@ -1015,20 +1037,36 @@ export class WorkerService {
             promptVersion: AGENT_PROMPT_VERSION,
           };
 
-          if (
-            result.status === RUN_STATUS.Cancelled ||
-            result.error === 'Worker execution timed out'
-          ) {
+          if (result.status !== RUN_STATUS.Completed) {
             agentResult.verdict = AGENT_VERDICT.Inconclusive;
             agentResult.confidence = 0;
-            agentResult.stopReason =
-              result.status === RUN_STATUS.Cancelled ? 'cancelled' : 'timeout';
-            agentResult.summary = result.error ?? 'Run cancelled';
+            if (result.status === RUN_STATUS.Cancelled) {
+              agentResult.stopReason = 'cancelled';
+            } else if (result.error === 'Worker execution timed out') {
+              agentResult.stopReason = 'timeout';
+            } else if (agentResult.stopReason === 'finished') {
+              agentResult.stopReason = 'browser_error';
+            }
+
+            agentResult.summary = result.error ?? `Run ${result.status}`;
+          }
+
+          if (run.taskId && run.stage === RUN_STAGE.Reproduction) {
+            agentResult = await this.reproductionResults.complete(
+              run,
+              result,
+              agentResult,
+              transaction,
+            );
           }
 
           await this.results.create(
             {
               runId: id,
+              type:
+                run.stage === RUN_STAGE.Reproduction
+                  ? RUN_RESULT_TYPE.IssueReproduction
+                  : RUN_RESULT_TYPE.BrowserTest,
               status: agentResult.verdict,
               confidence: agentResult.confidence,
               result: agentResult,
@@ -1064,7 +1102,14 @@ export class WorkerService {
     type: string,
     payload: Record<string, unknown>,
   ): Promise<void> {
-    await this.events.create({runId: id, type, payload});
+    await this.events.create({
+      runId: id,
+      type,
+      payload,
+      ...(type === 'agent.evidence'
+        ? {id: payload.sourceEventId as string}
+        : {}),
+    });
   }
 
   private redisOptions() {

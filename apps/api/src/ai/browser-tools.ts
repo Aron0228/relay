@@ -1,7 +1,7 @@
 import {z} from 'zod';
 import {PlaywrightInterface} from '../workers/playwright.interface';
 import {approvedUrl} from './config';
-import {AgentTool, AGENT_ACTIVITY_KIND} from './types';
+import {AgentConclusion, AgentTool, AGENT_ACTIVITY_KIND} from './types';
 
 const locatorSchema = z
   .object({
@@ -111,13 +111,23 @@ export const BROWSER_TOOLS: AgentTool[] = Object.entries(tools).map(
   }),
 );
 
+export interface BrowserToolOutput {
+  observation?: string;
+  sourceEventId?: string;
+  activity?: {kind: 'message' | 'observation'; text: string};
+  result?: AgentConclusion;
+}
+
 export class BrowserTools {
   constructor(
     private browser: PlaywrightInterface,
     private origins: string[],
   ) {}
 
-  async execute(name: string, rawArguments: string) {
+  async execute(
+    name: string,
+    rawArguments: string,
+  ): Promise<BrowserToolOutput> {
     if (!Object.prototype.hasOwnProperty.call(tools, name)) {
       throw new Error(`Unknown tool: ${name}`);
     }

@@ -15,6 +15,7 @@ export const AGENT_STOP_REASON = {
   Cancelled: 'cancelled',
   Timeout: 'timeout',
   ProviderError: 'provider_error',
+  BrowserError: 'browser_error',
 } as const;
 
 export type AgentStopReason =
@@ -23,14 +24,51 @@ export type AgentStopReason =
 export interface AgentInput {
   prompt: string;
   targetUrl: string;
+  reproduction?: ReproductionInput;
 }
 
-export interface AgentResult {
-  verdict: AgentVerdict;
+export const REPRODUCTION_VERDICT = {
+  Reproduced: 'reproduced',
+  NotReproduced: 'not_reproduced',
+  Inconclusive: 'inconclusive',
+} as const;
+
+export type ReproductionVerdict =
+  (typeof REPRODUCTION_VERDICT)[keyof typeof REPRODUCTION_VERDICT];
+
+export interface ReproductionInput {
+  issue: {id: string; number: number; url: string; title: string; body: string};
+  environment: {id: string; name: string; baseUrl: string};
+  expectedBehavior: string | null;
+  reportedBehavior: string | null;
+}
+
+export interface ReproductionStep {
+  number: number;
+  action: string;
+  expectedBehavior: string;
+  actualBehavior: string;
+  sourceEventIds: string[];
+}
+
+export interface ReproductionDetails {
+  preconditions: string[];
+  steps: ReproductionStep[];
+  expectedBehavior: string;
+  actualBehavior: string;
+  sourceEventIds: string[];
+}
+
+export interface AgentConclusion {
+  verdict: AgentVerdict | ReproductionVerdict;
   summary: string;
   confidence: number;
   steps: string[];
   observations: string[];
+  reproduction?: ReproductionDetails;
+}
+
+export interface AgentResult extends AgentConclusion {
   stopReason: AgentStopReason;
   turns: number;
   toolCalls: number;

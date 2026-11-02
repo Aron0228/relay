@@ -240,6 +240,19 @@ describe('GitHub comment issue reproduction (e2e)', () => {
       'https://academybugs.com/contact-us-form/',
     );
     expect(run!.agentInput!.prompt).not.toContain('evil.example');
+    expect(run!.agentInput!.reproduction).toMatchObject({
+      issue: {
+        title: 'The candy gate is stuck',
+        body: 'Jake clicks the gate, but it does not open.',
+        number: 173,
+      },
+      environment: {
+        id: environmentId,
+        baseUrl: 'https://academybugs.com/contact-us-form/',
+      },
+      expectedBehavior: null,
+      reportedBehavior: null,
+    });
     expect(enqueue).toHaveBeenCalledWith(run!.id);
   });
 
