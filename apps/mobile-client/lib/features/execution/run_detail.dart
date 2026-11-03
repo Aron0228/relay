@@ -314,7 +314,7 @@ class _RunDetailPageState extends State<RunDetailPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Verdict: ${_result?['result']?['verdict'] ?? 'Unavailable'}',
+                          '${_run!.data['taskId'] == null ? 'Verdict' : 'Stage result'}: ${_result?['result']?['verdict'] ?? 'Unavailable'}',
                           style: const TextStyle(
                             fontWeight: FontWeight.w600,
                             color: RelayTokens.primaryHover,

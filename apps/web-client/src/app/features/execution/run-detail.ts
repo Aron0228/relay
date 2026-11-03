@@ -71,7 +71,10 @@ import { ActivityTimeline } from './components/activity-timeline';
       </div>
       @if (!liveView && !active(current)) {
         <section class="panel verdict">
-          <h3>Verdict: {{ result()?.result?.verdict ?? 'Unavailable' }}</h3>
+          <h3>
+            {{ current.taskId ? 'Stage result' : 'Verdict' }}:
+            {{ result()?.result?.verdict ?? 'Unavailable' }}
+          </h3>
           <p>
             {{
               result()?.result?.summary ??

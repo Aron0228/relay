@@ -101,8 +101,18 @@ export class GithubAppService {
         (response.headers.get('x-ratelimit-remaining') === '0' ||
           response.headers.has('retry-after')))
     ) {
-      throw new HttpErrors.ServiceUnavailable(
-        'GitHub rate limit reached; retry later',
+      const retryAfter = Number(response.headers.get('retry-after'));
+      const reset = Number(response.headers.get('x-ratelimit-reset'));
+      const retryAfterSeconds = Math.max(
+        60,
+        Number.isFinite(retryAfter) ? retryAfter : 0,
+        reset ? reset - Date.now() / 1000 : 0,
+      );
+      throw Object.assign(
+        new HttpErrors.ServiceUnavailable(
+          'GitHub rate limit reached; retry later',
+        ),
+        {retryAfterSeconds},
       );
     }
 
@@ -353,6 +363,54 @@ export class GithubAppService {
       title: issue.title,
       body: issue.body ?? '',
     };
+  }
+
+  async findTaskComment(
+    installationId: number,
+    repositoryId: number,
+    number: number,
+    marker: string,
+  ) {
+    const app = this.parse(
+      z.object({id: z.number(), slug: z.string()}),
+      await this.request('/app', this.jwt()),
+    );
+    const repo = await this.requireRepository(installationId, repositoryId);
+    const path = repo.full_name.split('/').map(encodeURIComponent).join('/');
+    const schema = z.array(
+      z.object({
+        id: z.number().int().positive(),
+        body: z.string().nullable(),
+        user: z.object({type: z.string(), login: z.string()}).nullable(),
+        performed_via_github_app: z
+          .object({id: z.number()})
+          .nullable()
+          .optional(),
+      }),
+    );
+
+    for (let page = 1; page <= 20; page++) {
+      const comments = this.parse(
+        schema,
+        await this.installedRequest(
+          installationId,
+          `/repos/${path}/issues/${number}/comments?per_page=100&page=${page}`,
+        ),
+      );
+      const found = comments.find(
+        comment =>
+          comment.body?.includes(marker) &&
+          comment.user?.type === 'Bot' &&
+          (comment.performed_via_github_app?.id === app.id ||
+            comment.user.login === `${app.slug}[bot]`),
+      );
+      if (found) return found.id;
+      if (comments.length < 100) return undefined;
+    }
+
+    throw new HttpErrors.ServiceUnavailable(
+      'Comment reconciliation exceeded its page limit; no duplicate comment was sent',
+    );
   }
 
   async createComment(

@@ -25,6 +25,7 @@ export interface AgentInput {
   prompt: string;
   targetUrl: string;
   reproduction?: ReproductionInput;
+  verification?: VerificationInput;
 }
 
 export const REPRODUCTION_VERDICT = {
@@ -45,10 +46,23 @@ export interface ReproductionInput {
 
 export interface ReproductionStep {
   number: number;
+  sourceStepNumber?: number;
   action: string;
   expectedBehavior: string;
   actualBehavior: string;
   sourceEventIds: string[];
+}
+
+export interface VerificationInput {
+  kind: 'step_verification' | 'critic';
+  sourceRunId: string;
+  claim: ReproductionVerdict;
+  preconditions: string[];
+  steps: ReproductionStep[];
+  expectedBehavior: string;
+  actualBehavior: string;
+  confirmedRunId?: string;
+  minimizationTrial?: number;
 }
 
 export interface ReproductionDetails {

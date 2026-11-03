@@ -1,0 +1,129 @@
+@import '../execution/execution.css';
+
+.issue-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 17px 20px;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text);
+  text-decoration: none;
+}
+.issue-row:last-child {
+  border-bottom: 0;
+}
+.issue-row:hover {
+  background: var(--color-surface);
+}
+.row-info {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+}
+.row-info strong {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.tabs button {
+  color: var(--color-muted);
+  background: var(--color-surface);
+}
+.tabs button:hover,
+.tabs button.selected {
+  color: var(--color-text);
+  background: var(--color-selected);
+}
+.tab-panel {
+  padding: 24px;
+}
+.description {
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+.result-block {
+  border-top: 1px solid var(--color-border);
+  padding-top: 20px;
+  margin-top: 24px;
+}
+.result-block li {
+  margin-bottom: 10px;
+  line-height: 1.6;
+}
+.behavior-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-top: 24px;
+}
+.heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.primary-button {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  border-color: transparent;
+}
+.primary-button:hover {
+  background: var(--color-primary-hover);
+  color: var(--color-on-primary);
+}
+.issue-title {
+  font-size: 20px;
+  line-height: 1.4;
+  font-weight: 600;
+}
+.description {
+  margin-top: 20px;
+}
+.run-group + .run-group {
+  margin-top: 28px;
+}
+.run-group-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 12px;
+}
+.run-group-heading time {
+  color: var(--color-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+.stage-list {
+  display: grid;
+  gap: 6px;
+}
+.stage-row,
+.stage-row:last-child {
+  border: 1px solid transparent;
+  border-radius: 9px;
+}
+.stage-row:hover {
+  border-color: var(--color-border);
+}
+@media (max-width: 650px) {
+  .detail-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .tab-panel {
+    padding: 16px;
+  }
+  .behavior-grid {
+    grid-template-columns: 1fr;
+  }
+  .issue-row {
+    gap: 10px;
+    padding: 15px 12px;
+  }
+}

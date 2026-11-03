@@ -37,6 +37,12 @@ export class StageRequest extends Entity {
   stage!: typeof RUN_STAGE.StepVerification | typeof RUN_STAGE.Critic;
 
   @property({
+    type: 'string',
+    postgresql: {columnName: 'run_id', dataType: 'uuid'},
+  })
+  runId?: string | null;
+
+  @property({
     type: 'date',
     postgresql: {columnName: 'created_at', dataType: 'timestamptz'},
   })

@@ -4,6 +4,8 @@ import {AgentResult} from '../../ai/types';
 export const RUN_RESULT_TYPE = {
   BrowserTest: 'browser-test',
   IssueReproduction: 'issue-reproduction',
+  StepVerification: 'step-verification',
+  Critic: 'issue-critic',
 } as const;
 export type RunResultType =
   (typeof RUN_RESULT_TYPE)[keyof typeof RUN_RESULT_TYPE];
