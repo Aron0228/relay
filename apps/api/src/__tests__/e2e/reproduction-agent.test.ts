@@ -327,7 +327,7 @@ describe('Issue-context browser reproduction (e2e)', {timeout: 30000}, () => {
 
   it.each([
     ['reproduced', 'step_verification'],
-    ['not_reproduced', 'critic'],
+    ['not_reproduced', 'step_verification'],
   ])(
     'persists %s and requests %s without claiming a final task outcome',
     async (verdict, nextStage) => {
@@ -342,7 +342,7 @@ describe('Issue-context browser reproduction (e2e)', {timeout: 30000}, () => {
         status: verdict,
         result: {
           verdict,
-          promptVersion: 'issue-reproduction-v1',
+          promptVersion: 'issue-reproduction-v2',
           reproduction: {steps: [{number: 1, action: 'Click Open candy gate'}]},
         },
       });
