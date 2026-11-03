@@ -9,6 +9,9 @@ export type RunStatus = (typeof RUN_STATUS)[keyof typeof RUN_STATUS];
 
 export interface Run {
   id: string;
+  taskId?: string;
+  stage?: string;
+  attempt?: number;
   workspaceId?: string;
   environmentId?: string;
   title: string;
@@ -33,7 +36,7 @@ export interface RunEvent {
 
 export interface RunResult {
   result: {
-    verdict: 'passed' | 'failed' | 'inconclusive';
+    verdict: 'passed' | 'failed' | 'inconclusive' | 'reproduced' | 'not_reproduced';
     summary: string;
     steps: string[];
     observations: string[];

@@ -344,10 +344,16 @@ export class RunController {
   private publicRun(run: Run): object {
     return {
       id: run.id,
+      taskId: run.taskId,
+      stage: run.stage,
+      attempt: run.attempt,
+      queuedAt: run.queuedAt,
       workspaceId: run.workspaceId,
       environmentId: run.environmentId,
       scriptName: run.scriptName,
-      title: run.agentInput?.prompt ?? 'Example browser test',
+      title: run.taskId
+        ? `${run.stage?.replace(/_/g, ' ')}: ${run.agentInput?.reproduction?.issue.title ?? 'Issue investigation'}`
+        : (run.agentInput?.prompt ?? 'Example browser test'),
       targetUrl: run.agentInput?.targetUrl,
       cancelRequested: run.cancelRequested,
       status: run.status,

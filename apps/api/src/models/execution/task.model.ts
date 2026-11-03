@@ -139,6 +139,44 @@ export class Task extends Entity {
   result?: Record<string, unknown> | null;
 
   @property({
+    type: 'boolean',
+    default: false,
+    postgresql: {columnName: 'cancel_requested'},
+  })
+  cancelRequested!: boolean;
+
+  @property({
+    type: 'number',
+    default: 0,
+    postgresql: {columnName: 'feedback_attempts', dataType: 'integer'},
+  })
+  feedbackAttempts!: number;
+
+  @property({
+    type: 'date',
+    postgresql: {
+      columnName: 'feedback_next_attempt_at',
+      dataType: 'timestamptz',
+    },
+  })
+  feedbackNextAttemptAt?: Date | null;
+
+  @property({
+    type: 'string',
+    postgresql: {columnName: 'feedback_lease_token', dataType: 'uuid'},
+  })
+  feedbackLeaseToken?: string | null;
+
+  @property({
+    type: 'date',
+    postgresql: {
+      columnName: 'feedback_lease_expires_at',
+      dataType: 'timestamptz',
+    },
+  })
+  feedbackLeaseExpiresAt?: Date | null;
+
+  @property({
     type: 'string',
     required: true,
     default: TASK_FEEDBACK_STATUS.Pending,

@@ -1,14 +1,19 @@
-import { Routes } from '@angular/router';
+import { CanActivateFn, Routes } from '@angular/router';
 import { inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { WorkspaceService } from './workspace.service';
 import { sessionGuard } from '../auth/auth.guards';
 
-const workspaceGuard = async () => {
+const workspaceGuard: CanActivateFn = async (route) => {
   const workspaces = inject(WorkspaceService);
   const router = inject(Router);
 
   await workspaces.ensureLoaded();
+  const requestedWorkspace = route.queryParamMap.get('workspaceId');
+
+  if (requestedWorkspace && workspaces.items().some((item) => item.id === requestedWorkspace)) {
+    workspaces.activate(requestedWorkspace);
+  }
 
   return workspaces.active() ? true : router.createUrlTree(['/workspaces']);
 };

@@ -8,6 +8,7 @@ import 'features/workspace/workspace_create.dart';
 import 'theme.dart';
 import 'session_service.dart';
 import 'features/execution/execution_page.dart';
+import 'features/issues/issues_page.dart';
 
 const _navigation = [
   (
@@ -542,6 +543,16 @@ class _WorkspaceShellState extends State<WorkspaceShell> {
                   key: ValueKey('${widget.sessions!.workspaceId}-$_selected'),
                   sessions: widget.sessions!,
                   workers: _selected == 'Workers',
+                ),
+              ),
+            if (widget.sessions != null &&
+                _workspace != null &&
+                _selected == 'Issues')
+              Padding(
+                padding: const EdgeInsets.only(top: 24),
+                child: IssuesPage(
+                  key: ValueKey(widget.sessions!.workspaceId),
+                  sessions: widget.sessions!,
                 ),
               ),
             if (widget.error != null)

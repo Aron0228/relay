@@ -14,3 +14,6 @@ export * from './github-connection.service';
 export * from './issue-reproduction.service';
 export * from './worker-capacity.service';
 export * from './reproduction-result.service';
+export * from './issue-stage.service';
+export * from './github-feedback.service';
+export * from './issue-query.service';

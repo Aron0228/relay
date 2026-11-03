@@ -99,7 +99,7 @@ describe('Issue reproduction agent', () => {
       expect(result).toMatchObject({
         verdict,
         stopReason: 'finished',
-        promptVersion: 'issue-reproduction-v1',
+        promptVersion: 'issue-reproduction-v2',
         reproduction: {
           preconditions: ['A gate is available to Finn'],
           steps: [

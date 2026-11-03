@@ -3,9 +3,10 @@ import {IsolationLevel, repository} from '@loopback/repository';
 import {HttpErrors, Response} from '@loopback/rest';
 import {GithubConnectionService} from './github-connection.service';
 import {AgentInput, AgentResult, AGENT_VERDICT} from '../ai/types';
-import {approvedUrl, allowedOrigins, positiveInteger} from '../ai/config';
-import {AGENT_PROMPT_VERSION} from '../ai/system-prompt';
+import {approvedUrl, allowedOrigins} from '../ai/config';
+import {agentPrompt} from '../ai/verification-prompt';
 import {reproductionInput} from '../ai/reproduction-input';
+import {stageLimits} from '../ai/stage-limits';
 import {ReproductionResultService} from './reproduction-result.service';
 import {DelayedError, Job, Queue, Worker} from 'bullmq';
 import {WorkerCapacityService} from './worker-capacity.service';
@@ -306,6 +307,80 @@ export class WorkerService {
   }
 
   async cancel(id: string): Promise<void> {
+    const run = await this.runs.findById(id);
+
+    if (run.taskId) {
+      await this.cancelTask(run.taskId);
+      return;
+    }
+
+    await this.cancelRun(id);
+  }
+
+  async cancelTask(taskId: string): Promise<void> {
+    const transaction = await this.tasks.beginTransaction(
+      IsolationLevel.READ_COMMITTED,
+    );
+    const options = {transaction};
+
+    try {
+      await this.tasks.execute(
+        'SELECT id FROM execution.task WHERE id = $1 FOR UPDATE',
+        [taskId],
+        options,
+      );
+      const task = await this.tasks.findById(taskId, undefined, options);
+      if (task.endedAt) {
+        await transaction.commit();
+        return;
+      }
+
+      await this.tasks.updateById(
+        taskId,
+        {
+          cancelRequested: true,
+          status: TASK_STATUS.Cancelled,
+          outcome: 'inconclusive',
+          endedAt: new Date(),
+          result: {
+            ...task.result,
+            summary: 'The investigation was cancelled.',
+            verdict: 'inconclusive',
+            verification: 'cancelled',
+            nextStage: null,
+          },
+        },
+        options,
+      );
+      await this.runs.updateAll(
+        {cancelRequested: true},
+        {taskId, status: {inq: [RUN_STATUS.Queued, RUN_STATUS.Running]}},
+        options,
+      );
+      await this.tasks.execute(
+        'UPDATE execution.stage_request SET consumed_at = now() WHERE task_id = $1 AND consumed_at IS NULL',
+        [taskId],
+        options,
+      );
+      await transaction.commit();
+    } catch (error) {
+      await transaction.rollback();
+      throw error;
+    }
+
+    const active = await this.runs.find({
+      where: {taskId, status: {inq: [RUN_STATUS.Queued, RUN_STATUS.Running]}},
+    });
+    await this.initialize();
+    for (const run of active) {
+      await this.event(run.id, 'run.cancel_requested', {taskId});
+      await this.publisher!.publish(this.cancelChannel, run.id);
+      if (run.status === RUN_STATUS.Queued)
+        await this.finish(run.id, {status: RUN_STATUS.Cancelled}, true);
+    }
+  }
+
+  private async cancelRun(id: string): Promise<void> {
     const {count} = await this.runs.updateAll(
       {cancelRequested: true},
       {id, status: {inq: [RUN_STATUS.Queued, RUN_STATUS.Running]}},
@@ -733,6 +808,15 @@ export class WorkerService {
     const run = await this.runs.findById(id);
 
     if (run.taskId) {
+      const task = await this.tasks.findById(run.taskId);
+      if (task.cancelRequested || task.endedAt) {
+        await this.finish(id, {
+          status: RUN_STATUS.Cancelled,
+          error: 'The investigation is no longer active',
+        });
+        return;
+      }
+
       await this.tasks.updateAll(
         {status: TASK_STATUS.Running, startedAt: run.startedAt ?? new Date()},
         {
@@ -770,6 +854,17 @@ export class WorkerService {
           run.environmentId!,
         );
         exampleUrl = target.targetUrl;
+        if (
+          run.agentInput?.verification &&
+          new URL(run.agentInput.targetUrl).toString() !==
+            new URL(target.targetUrl).toString()
+        ) {
+          await this.finish(run.id, {
+            status: RUN_STATUS.Cancelled,
+            error: 'The target environment URL changed before verification',
+          });
+          return;
+        }
 
         if (run.stage === RUN_STAGE.Reproduction) {
           const task = await this.tasks.findById(run.taskId);
@@ -780,7 +875,20 @@ export class WorkerService {
             baseUrl: target.targetUrl,
           });
         } else if (run.agentInput) {
-          run.agentInput = {...run.agentInput, targetUrl: target.targetUrl};
+          run.agentInput = {
+            ...run.agentInput,
+            targetUrl: target.targetUrl,
+            reproduction: run.agentInput.reproduction
+              ? {
+                  ...run.agentInput.reproduction,
+                  environment: {
+                    ...run.agentInput.reproduction.environment,
+                    name: target.environment.name,
+                    baseUrl: target.targetUrl,
+                  },
+                }
+              : undefined,
+          };
         }
 
         await this.runs.updateById(id, {agentInput: run.agentInput});
@@ -798,6 +906,10 @@ export class WorkerService {
     if (leaseLost() || Date.now() >= leaseDeadline() || this.stopping) {
       throw new Error('Worker capacity lease lost or infrastructure stopping');
     }
+
+    const executionTimeoutMs = run.agentInput
+      ? stageLimits(run.agentInput).timeoutMs
+      : this.timeoutMs;
 
     const child = fork(
       path.join(__dirname, '../workers/browser-worker.js'),
@@ -836,15 +948,10 @@ export class WorkerService {
       if (child.connected) child.send({type: 'heartbeat', deadline}, () => {});
     });
 
-    const timeout = setTimeout(
-      () => {
-        timedOut = true;
-        terminate();
-      },
-      run.agentInput
-        ? positiveInteger('AI_RUN_TIMEOUT_SECONDS', 180) * 1000
-        : this.timeoutMs,
-    );
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      terminate();
+    }, executionTimeoutMs);
 
     child.on('message', (message: WorkerMessage) => {
       if (message.type === 'event') {
@@ -972,14 +1079,32 @@ export class WorkerService {
       }
     }
 
+    const finishing = await this.runs.findById(id);
     const transaction = await this.runs.beginTransaction(
       IsolationLevel.READ_COMMITTED,
     );
     const options = {transaction};
-
     let count = 0;
 
     try {
+      if (finishing.taskId) {
+        await this.tasks.execute(
+          'SELECT id FROM execution.task WHERE id = $1 FOR UPDATE',
+          [finishing.taskId],
+          options,
+        );
+        const task = await this.tasks.findById(
+          finishing.taskId,
+          undefined,
+          options,
+        );
+        if (task.cancelRequested)
+          result = {
+            ...result,
+            status: RUN_STATUS.Cancelled,
+            error: 'The investigation was cancelled.',
+          };
+      }
       const updated = await this.runs.updateAll(
         {
           status: result.status,
@@ -1003,23 +1128,6 @@ export class WorkerService {
       if (count) {
         const run = await this.runs.findById(id, undefined, options);
 
-        if (run.taskId && run.stage !== RUN_STAGE.Reproduction) {
-          await this.tasks.updateAll(
-            {status: result.status, endedAt: new Date()},
-            {
-              id: run.taskId,
-              status: {
-                inq: [
-                  TASK_STATUS.Pending,
-                  TASK_STATUS.Queued,
-                  TASK_STATUS.Running,
-                ],
-              },
-            },
-            options,
-          );
-        }
-
         if (run.agentInput) {
           let agentResult: AgentResult = result.agentResult ?? {
             verdict: AGENT_VERDICT.Inconclusive,
@@ -1034,7 +1142,7 @@ export class WorkerService {
             turns: 0,
             toolCalls: 0,
             model: process.env.AI_MODEL ?? 'qwen3:8b',
-            promptVersion: AGENT_PROMPT_VERSION,
+            promptVersion: agentPrompt(run.agentInput).promptVersion,
           };
 
           if (result.status !== RUN_STATUS.Completed) {
@@ -1051,7 +1159,7 @@ export class WorkerService {
             agentResult.summary = result.error ?? `Run ${result.status}`;
           }
 
-          if (run.taskId && run.stage === RUN_STAGE.Reproduction) {
+          if (run.taskId) {
             agentResult = await this.reproductionResults.complete(
               run,
               result,
@@ -1064,9 +1172,13 @@ export class WorkerService {
             {
               runId: id,
               type:
-                run.stage === RUN_STAGE.Reproduction
-                  ? RUN_RESULT_TYPE.IssueReproduction
-                  : RUN_RESULT_TYPE.BrowserTest,
+                run.stage === RUN_STAGE.Critic
+                  ? RUN_RESULT_TYPE.Critic
+                  : run.stage === RUN_STAGE.StepVerification
+                    ? RUN_RESULT_TYPE.StepVerification
+                    : run.taskId
+                      ? RUN_RESULT_TYPE.IssueReproduction
+                      : RUN_RESULT_TYPE.BrowserTest,
               status: agentResult.verdict,
               confidence: agentResult.confidence,
               result: agentResult,

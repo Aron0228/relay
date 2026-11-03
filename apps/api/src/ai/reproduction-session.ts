@@ -1,3 +1,4 @@
+import {describeBrowserAction, isBareBrowserAction} from './browser-action';
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import {PlaywrightInterface} from '../workers/playwright.interface';
@@ -9,6 +10,7 @@ import {
   AgentTool,
   ReproductionInput,
   REPRODUCTION_VERDICT,
+  VerificationInput,
 } from './types';
 
 const text = z.string().min(1).max(4000);
@@ -23,7 +25,10 @@ export const reproductionFinishSchema = z
       .array(
         z
           .object({
-            action: text,
+            action: text.describe(
+              'A human-readable instruction identifying the target and test value, for example: Enter "Finn" into the First Name textbox. Never just fill or click.',
+            ),
+            sourceStepNumber: z.number().int().min(1).max(100).optional(),
             expectedBehavior: text,
             actualBehavior: text,
             sourceEventIds: eventIds,
@@ -54,6 +59,11 @@ export const REPRODUCTION_TOOLS: AgentTool[] = BROWSER_TOOLS.map(tool =>
 export class ReproductionSession {
   private readonly browserTools: BrowserTools;
   private readonly evidence = new Set<string>();
+  private readonly actions: {
+    description: string;
+    sourceEventId: string;
+    kind: string;
+  }[] = [];
   private readonly maxObservation = positiveInteger(
     'AI_MAX_OBSERVATION_CHARACTERS',
     12000,
@@ -63,6 +73,7 @@ export class ReproductionSession {
     private input: ReproductionInput,
     browser: PlaywrightInterface,
     private emit: AgentEvent,
+    private verification?: VerificationInput,
   ) {
     this.browserTools = new BrowserTools(browser, allowedOrigins());
   }
@@ -76,6 +87,7 @@ export class ReproductionSession {
         bodyTruncated: this.input.issue.body.length > 16000,
       },
       environment: this.input.environment,
+      verification: this.verification,
       expectedBehavior: this.input.expectedBehavior,
       reportedBehavior: this.input.reportedBehavior,
     };
@@ -101,7 +113,15 @@ export class ReproductionSession {
     const value = await this.browserTools.execute(name, args);
 
     if (value.observation !== undefined) {
-      return this.observation(value.observation, name);
+      const observed = this.observation(value.observation, name);
+      const description = describeBrowserAction(name, JSON.parse(args));
+      if (description)
+        this.actions.push({
+          description,
+          sourceEventId: observed.sourceEventId,
+          kind: name.replace(/^browser/, '').toLowerCase(),
+        });
+      return observed;
     }
 
     return value;
@@ -145,6 +165,37 @@ export class ReproductionSession {
       );
     }
 
+    const steps = result.steps.map((step, index) => {
+      const kind = step.action
+        .toLowerCase()
+        .replace(/^browser/, '')
+        .replace(/[.!]$/, '');
+      const matching = this.actions.filter(
+        item =>
+          item.kind === kind &&
+          step.sourceEventIds.includes(item.sourceEventId),
+      );
+      const positional =
+        this.actions.length === result.steps.length
+          ? this.actions[index]
+          : undefined;
+      const action =
+        positional?.kind === kind
+          ? positional
+          : matching.length === 1
+            ? matching[0]
+            : undefined;
+      if (!action || !isBareBrowserAction(step.action)) return step;
+
+      return {
+        ...step,
+        action: action.description,
+        sourceEventIds: [
+          ...new Set([...step.sourceEventIds, action.sourceEventId]),
+        ],
+      };
+    });
+
     return {
       verdict: result.verdict,
       summary: result.summary,
@@ -152,11 +203,11 @@ export class ReproductionSession {
         result.verdict === REPRODUCTION_VERDICT.Inconclusive
           ? 0
           : result.confidence,
-      steps: result.steps.map(step => step.action),
+      steps: steps.map(step => step.action),
       observations: [result.actualBehavior],
       reproduction: {
         preconditions: result.preconditions,
-        steps: result.steps.map((step, index) => ({
+        steps: steps.map((step, index) => ({
           number: index + 1,
           ...step,
         })),

@@ -1,14 +1,18 @@
 import {BindingScope, injectable} from '@loopback/core';
 import {repository, Transaction} from '@loopback/repository';
-import {AgentResult, REPRODUCTION_VERDICT} from '../ai/types';
-import {REPRODUCTION_PROMPT_VERSION} from '../ai/reproduction-prompt';
-import {Run, RUN_STAGE, RUN_STATUS, TASK_OUTCOME, TASK_STATUS} from '../models';
+import {
+  AgentResult,
+  ReproductionVerdict,
+  REPRODUCTION_VERDICT as VERDICT,
+} from '../ai/types';
+import {Run, RUN_STAGE, RUN_STATUS, TASK_STATUS} from '../models';
 import {
   RunEventRepository,
   StageRequestRepository,
   TaskRepository,
 } from '../repositories';
 import {WorkerResult} from '../workers/protocol';
+import {IssuePipelineState} from './issue-pipeline-state';
 
 export const REPRODUCTION_RESULT_SERVICE_BINDING_KEY =
   'services.ReproductionResultService';
@@ -29,6 +33,8 @@ export class ReproductionResultService {
     transaction: Transaction,
   ): Promise<AgentResult> {
     const options = {transaction};
+    const task = await this.tasks.findById(run.taskId!, undefined, options);
+    const state: IssuePipelineState = {...task.result};
     const details = result.reproduction;
     const references = [
       ...new Set([
@@ -48,75 +54,112 @@ export class ReproductionResultService {
           options,
         )
       : [];
-    const conclusive =
-      execution.status === RUN_STATUS.Completed &&
-      result.stopReason === 'finished' &&
-      (result.verdict === REPRODUCTION_VERDICT.Reproduced ||
-        result.verdict === REPRODUCTION_VERDICT.NotReproduced) &&
-      details &&
-      details.steps.length > 0 &&
-      details.sourceEventIds.length > 0 &&
-      details.steps.every(step => step.sourceEventIds.length > 0) &&
-      evidence.length === references.length;
+    const verification = run.agentInput?.verification;
+    const sameSequence =
+      !verification ||
+      (details?.steps.length === verification.steps.length &&
+        details.steps.every(
+          (step, index) =>
+            step.sourceStepNumber === verification.steps[index].number ||
+            (step.sourceStepNumber === undefined &&
+              step.action === verification.steps[index].action),
+        ));
+    let validationError: string | undefined;
 
+    if (execution.status !== RUN_STATUS.Completed)
+      validationError =
+        execution.error ??
+        `The browser run ${execution.status} before verification finished.`;
+    else if (result.stopReason !== 'finished') validationError = result.summary;
+    else if (
+      !details?.steps.length ||
+      !details.sourceEventIds.length ||
+      details.steps.some(step => !step.sourceEventIds.length)
+    )
+      validationError =
+        'The agent did not provide a complete step sequence with recorded observations for each step.';
+    else if (evidence.length !== references.length)
+      validationError =
+        'Some cited observations could not be found in this run. The reported behavior could not be independently verified.';
+    else if (!sameSequence)
+      validationError = `The verifier did not account for all ${verification!.steps.length} original steps in order. Its observations cannot establish that the same scenario was replayed.`;
+
+    const conclusive =
+      !task.cancelRequested &&
+      !validationError &&
+      (result.verdict === VERDICT.Reproduced ||
+        result.verdict === VERDICT.NotReproduced);
     if (!conclusive) {
-      const invalidClaim = result.verdict !== REPRODUCTION_VERDICT.Inconclusive;
       result = {
         ...result,
-        verdict: REPRODUCTION_VERDICT.Inconclusive,
+        verdict: VERDICT.Inconclusive,
         confidence: 0,
-        summary: invalidClaim
-          ? (execution.error ??
-            "The reproduction claim could not be supported by this run's observed evidence.")
-          : result.summary,
-        reproduction: details ?? {
-          preconditions: [],
-          steps: [],
-          expectedBehavior:
-            run.agentInput?.reproduction?.expectedBehavior ?? 'Not established',
-          actualBehavior: 'The investigation did not establish an outcome',
-          sourceEventIds: [],
-        },
+        summary: validationError ?? result.summary,
       };
     }
 
-    result.promptVersion = REPRODUCTION_PROMPT_VERSION;
-    let nextStage:
-      typeof RUN_STAGE.StepVerification | typeof RUN_STAGE.Critic | undefined;
+    let nextStage: typeof RUN_STAGE.StepVerification | undefined;
+    let outcome: ReproductionVerdict = VERDICT.Inconclusive;
+    let reason = result.summary;
 
-    if (conclusive) {
-      nextStage =
-        result.verdict === REPRODUCTION_VERDICT.Reproduced
-          ? RUN_STAGE.StepVerification
-          : RUN_STAGE.Critic;
+    if (run.stage === RUN_STAGE.Reproduction) {
+      state.reproductionRunId = run.id;
+      state.reproduction = details;
+      state.provisionalVerdict = result.verdict as ReproductionVerdict;
+      if (conclusive) nextStage = RUN_STAGE.StepVerification;
+    } else {
+      state.verificationObservation = details?.actualBehavior;
+      if (conclusive && result.verdict === state.provisionalVerdict) {
+        outcome = result.verdict as ReproductionVerdict;
+        state.confirmed = details;
+        state.confirmedRunId = run.id;
+      } else if (conclusive) {
+        reason = `The two runs disagreed: the first reported ${state.provisionalVerdict?.replace(/_/g, ' ')}, while verification reported ${result.verdict.replace(/_/g, ' ')}. ${result.summary}`;
+      }
     }
 
-    if (nextStage) {
+    if (task.cancelRequested || task.status === TASK_STATUS.Cancelled) {
+      nextStage = undefined;
+      outcome = VERDICT.Inconclusive;
+      reason = 'The investigation was cancelled.';
+    }
+
+    if (nextStage)
       await this.requests.create(
-        {taskId: run.taskId!, sourceRunId: run.id, stage: nextStage},
+        {taskId: task.id, sourceRunId: run.id, stage: nextStage},
         options,
       );
-    }
 
+    const finalDetails = state.confirmed ?? details;
     await this.tasks.updateAll(
       {
-        status: nextStage ? TASK_STATUS.Queued : execution.status,
-        outcome: nextStage ? null : TASK_OUTCOME.Inconclusive,
+        status: nextStage
+          ? TASK_STATUS.Queued
+          : task.cancelRequested
+            ? TASK_STATUS.Cancelled
+            : execution.status,
+        outcome: nextStage ? null : outcome,
         endedAt: nextStage ? null : new Date(),
         result: {
-          reproductionRunId: run.id,
-          provisionalVerdict: result.verdict,
-          summary: result.summary,
-          verification: nextStage ? 'pending' : 'not_requested',
+          ...state,
+          summary: reason,
+          verdict: nextStage ? undefined : outcome,
+          verification: nextStage
+            ? 'pending'
+            : outcome === VERDICT.Inconclusive
+              ? 'inconclusive'
+              : 'verified',
           nextStage: nextStage ?? null,
+          preconditions: finalDetails?.preconditions ?? [],
+          steps: state.confirmed?.steps ?? [],
+          expectedBehavior:
+            state.reproduction?.expectedBehavior ??
+            finalDetails?.expectedBehavior,
+          actualBehavior:
+            state.reproduction?.actualBehavior ?? details?.actualBehavior,
         },
       },
-      {
-        id: run.taskId!,
-        status: {
-          inq: [TASK_STATUS.Pending, TASK_STATUS.Queued, TASK_STATUS.Running],
-        },
-      },
+      {id: task.id},
       options,
     );
 

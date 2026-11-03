@@ -3,6 +3,7 @@ import { Component, inject, OnInit } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { SessionService } from '../session.service';
+import { consumeIssueUrl } from '../return-url';
 
 @Component({
   selector: 'app-auth-callback',
@@ -27,7 +28,7 @@ export class AuthCallback implements OnInit {
 
       if (!profile) throw new Error('Session unavailable');
 
-      await this.router.navigateByUrl('/workspaces', { replaceUrl: true });
+      await this.router.navigateByUrl(consumeIssueUrl() ?? '/workspaces', { replaceUrl: true });
     } catch {
       this.sessions.clear();
       this.sessions.error.set('Could not sign in. Please try again.');

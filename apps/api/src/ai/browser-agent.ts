@@ -1,13 +1,11 @@
 /* eslint-disable @typescript-eslint/naming-convention -- Chat Completions protocol uses snake_case fields. */
+import {stageLimits} from './stage-limits';
+import {agentPrompt} from './verification-prompt';
 import {PlaywrightInterface} from '../workers/playwright.interface';
 import {BROWSER_TOOLS, BrowserTools, parseTextVerdict} from './browser-tools';
 import {approvedUrl, allowedOrigins, positiveInteger} from './config';
-import {AGENT_PROMPT_VERSION, AGENT_SYSTEM_PROMPT} from './system-prompt';
 import {ReproductionSession, REPRODUCTION_TOOLS} from './reproduction-session';
-import {
-  REPRODUCTION_PROMPT_VERSION,
-  REPRODUCTION_SYSTEM_PROMPT,
-} from './reproduction-prompt';
+
 import {
   AgentConclusion,
   AgentEvent,
@@ -19,8 +17,6 @@ import {
 } from './types';
 
 export class BrowserAgent {
-  private readonly maxTurns = positiveInteger('AI_MAX_TURNS', 20);
-  private readonly maxToolCalls = positiveInteger('AI_MAX_TOOL_CALLS', 40);
   private readonly maxContext = positiveInteger(
     'AI_MAX_CONTEXT_CHARACTERS',
     80000,
@@ -29,8 +25,6 @@ export class BrowserAgent {
     'AI_MAX_OBSERVATION_CHARACTERS',
     12000,
   );
-  private readonly timeoutMs =
-    positiveInteger('AI_RUN_TIMEOUT_SECONDS', 180) * 1000;
 
   constructor(
     private provider: AiProvider,
@@ -42,22 +36,24 @@ export class BrowserAgent {
     input: AgentInput,
     cancellation: AbortSignal,
   ): Promise<AgentResult> {
-    const deadline = AbortSignal.timeout(this.timeoutMs);
+    const {maxTurns, maxToolCalls, timeoutMs} = stageLimits(input);
+    const deadline = AbortSignal.timeout(timeoutMs);
     const signal = AbortSignal.any([cancellation, deadline]);
     const reproduction = input.reproduction
-      ? new ReproductionSession(input.reproduction, this.browser, this.emit)
+      ? new ReproductionSession(
+          input.reproduction,
+          this.browser,
+          this.emit,
+          input.verification,
+        )
       : undefined;
     const tools =
       reproduction ?? new BrowserTools(this.browser, allowedOrigins());
-    const promptVersion = reproduction
-      ? REPRODUCTION_PROMPT_VERSION
-      : AGENT_PROMPT_VERSION;
+    const {promptVersion, systemPrompt} = agentPrompt(input);
     const messages: ChatMessage[] = [
       {
         role: 'system',
-        content: reproduction
-          ? REPRODUCTION_SYSTEM_PROMPT
-          : AGENT_SYSTEM_PROMPT,
+        content: systemPrompt,
       },
       {
         role: 'user',
@@ -65,8 +61,8 @@ export class BrowserAgent {
           goal: input.prompt,
           ...(reproduction ? {reproduction: reproduction.context()} : {}),
           targetUrl: input.targetUrl,
-          maxTurns: this.maxTurns,
-          maxToolCalls: this.maxToolCalls,
+          maxTurns,
+          maxToolCalls,
         }),
       },
     ];
@@ -113,8 +109,8 @@ export class BrowserAgent {
       this.emit('agent.started', {
         model: this.provider.model,
         promptVersion,
-        maxTurns: this.maxTurns,
-        maxToolCalls: this.maxToolCalls,
+        maxTurns,
+        maxToolCalls,
       });
       signal.throwIfAborted();
       await this.browser.navigate(
@@ -126,10 +122,10 @@ export class BrowserAgent {
         content: `Initial browser observation:\n${this.clip(reproduction ? JSON.stringify(reproduction.observation(initialObservation)) : initialObservation)}`,
       });
 
-      while (turns < this.maxTurns) {
+      while (turns < maxTurns) {
         signal.throwIfAborted();
 
-        if (toolCalls >= this.maxToolCalls) {
+        if (toolCalls >= maxToolCalls) {
           return conclude(
             'tool_limit',
             'The tool-call limit was reached before testing finished.',
@@ -145,8 +141,7 @@ export class BrowserAgent {
 
         turns++;
         this.emit('agent.turn_started', {turn: turns});
-        const finishing =
-          turns === this.maxTurns || toolCalls === this.maxToolCalls - 1;
+        const finishing = turns === maxTurns || toolCalls === maxToolCalls - 1;
 
         if (finishing) {
           messages.push({
@@ -218,7 +213,7 @@ export class BrowserAgent {
         for (const call of response.tool_calls) {
           signal.throwIfAborted();
 
-          if (toolCalls >= this.maxToolCalls) {
+          if (toolCalls >= maxToolCalls) {
             return conclude(
               'tool_limit',
               'The tool-call limit was reached before testing finished.',
