@@ -20,7 +20,7 @@ import { IssueService } from './issue.service';
     @if (issue(); as item) {
       <header class="detail-heading">
         <div>
-          <h2>Issue #{{ item.number }}</h2>
+          <h2>{{ resource === 'issues' ? 'Issue' : 'Pull request' }} #{{ item.number }}</h2>
           <p class="muted">{{ item.repository }}</p>
         </div>
         <div class="heading-actions">
@@ -44,6 +44,16 @@ import { IssueService } from './issue.service';
         >
           Overview
         </button>
+        @if (resource === 'pull-requests') {
+          <button
+            role="tab"
+            [attr.aria-selected]="tab() === 'context'"
+            [class.selected]="tab() === 'context'"
+            (click)="tab.set('context')"
+          >
+            Context
+          </button>
+        }
         <button
           role="tab"
           [attr.aria-selected]="tab() === 'runs'"
@@ -55,6 +65,12 @@ import { IssueService } from './issue.service';
       </div>
       <section class="panel tab-panel" role="tabpanel">
         @if (tab() === 'overview') {
+          @if (item.targetUrl) {
+            <p class="muted">Environment: {{ item.targetUrl }}</p>
+            <p class="muted">
+              Captured head: <code>{{ item.headSha }}</code>
+            </p>
+          }
           <section class="issue-summary">
             <h3 class="issue-title">{{ item.title }}</h3>
             <div class="description">
@@ -105,6 +121,64 @@ import { IssueService } from './issue.service';
               </div>
             </div>
           }
+        } @else if (tab() === 'context') {
+          @if (item.context; as context) {
+            <div class="context-content">
+              <p class="muted">Context: {{ context.status }} · {{ context.headSha }}</p>
+              @if (context.model) {
+                <p class="muted">{{ context.model }} · {{ context.promptVersion }}</p>
+              }
+              @if (context.error) {
+                <p class="error">{{ context.error }}</p>
+              }
+              @if (context.data; as data) {
+                <h3>Test objective</h3>
+                <p>{{ data.summary }}</p>
+                <h3>Affected surfaces</h3>
+                <ul>
+                  @for (surface of data.affectedSurfaces; track $index) {
+                    <li>{{ surface }}</li>
+                  }
+                </ul>
+                <h3>Preconditions</h3>
+                <ul>
+                  @for (condition of data.preconditions; track $index) {
+                    <li>{{ condition }}</li>
+                  }
+                </ul>
+                <h3>Planned checks</h3>
+                <ol>
+                  @for (step of data.steps; track $index) {
+                    <li>{{ step }}</li>
+                  }
+                </ol>
+                <h3>Expected behavior</h3>
+                <p>{{ data.expectedBehavior }}</p>
+                <h3>Uncertainties</h3>
+                <ul>
+                  @for (uncertainty of data.uncertainties; track $index) {
+                    <li>{{ uncertainty }}</li>
+                  } @empty {
+                    <li>None reported.</li>
+                  }
+                </ul>
+              }
+              <h3>Captured sources</h3>
+              @for (source of context.sources; track source.id) {
+                <details class="result-block">
+                  <summary>
+                    {{ source.kind }} · {{ source.id }}{{ source.truncated ? ' · Truncated' : '' }}
+                  </summary>
+                  <a [href]="source.url" target="_blank" rel="noopener noreferrer"
+                    >View source on GitHub</a
+                  >
+                  <pre class="source-content">{{ source.content }}</pre>
+                </details>
+              }
+            </div>
+          } @else {
+            <p class="muted">Waiting for context collection.</p>
+          }
         } @else {
           @for (group of item.runGroups; track group.investigation.id) {
             <section class="run-group">
@@ -151,6 +225,7 @@ export class IssueDetailPage implements OnInit {
   protected readonly outcomeLabel = issueOutcomeLabel;
   private readonly api = inject(IssueService);
   private readonly route = inject(ActivatedRoute);
+  protected readonly resource = this.route.snapshot.data['resource'] ?? 'issues';
   private readonly workspaces = inject(WorkspaceService);
   private readonly destroy = inject(DestroyRef);
   protected readonly issue = signal<IssueDetail | null>(null);
@@ -178,7 +253,7 @@ export class IssueDetailPage implements OnInit {
     clearTimeout(this.timer);
     this.error.set('');
     try {
-      const issue = await this.api.get(this.id, this.taskId);
+      const issue = await this.api.get(this.id, this.taskId, this.resource);
       if (this.closed || revision !== this.revision) return;
       if (issue.workspaceId !== this.workspaces.active()?.id)
         this.workspaces.activate(issue.workspaceId);

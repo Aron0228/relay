@@ -1,3 +1,4 @@
+import { SelectField } from '../../../shared/select-field';
 import { Component, inject, output, signal, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
@@ -9,7 +10,7 @@ declare const API_BASE_URL: string;
 
 @Component({
   selector: 'app-start-run',
-  imports: [FormsModule],
+  imports: [SelectField, FormsModule],
   template: `
     <details>
       <summary>New run</summary>
@@ -25,11 +26,13 @@ declare const API_BASE_URL: string;
           ></textarea>
         </label>
         <label
-          >Environment<select name="environment" [(ngModel)]="environmentId" required>
-            @for (environment of environments(); track environment.id) {
-              <option [value]="environment.id">{{ environment.name }}</option>
-            }
-          </select></label
+          >Environment<app-select-field
+            ><select name="environment" [(ngModel)]="environmentId" required>
+              @for (environment of environments(); track environment.id) {
+                <option [value]="environment.id">{{ environment.name }}</option>
+              }
+            </select></app-select-field
+          ></label
         >
         @if (error()) {
           <p role="alert">{{ error() }}</p>
@@ -97,7 +100,7 @@ export class StartRun implements OnInit {
 
   async ngOnInit() {
     try {
-      const environments = await this.workspaces.environments();
+      const environments = (await this.workspaces.environments()).filter((item) => item.baseUrl);
       this.environments.set(environments);
       this.environmentId = environments[0]?.id ?? '';
     } catch {

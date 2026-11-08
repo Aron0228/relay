@@ -1,4 +1,4 @@
-import {allowedOrigins} from '../ai/config';
+import {allowedOrigins, isApprovedOrigin} from '../ai/config';
 import {
   Browser,
   BrowserContext,
@@ -57,7 +57,7 @@ export class PlaywrightInterface {
             requestId: string;
             request: {url: string};
           }) => {
-            const approved = origins.includes(new URL(request.url).origin);
+            const approved = isApprovedOrigin(new URL(request.url), origins);
             const command = approved
               ? 'Fetch.continueRequest'
               : 'Fetch.failRequest';
@@ -122,10 +122,22 @@ export class PlaywrightInterface {
     this.event('browser.started', {});
   }
 
-  async navigate(url: string): Promise<void> {
-    await this.perform('navigate', {url}, () =>
-      this.getPage().goto(url, {waitUntil: 'domcontentloaded'}),
-    );
+  async navigate(
+    url: string,
+    requireSuccess = false,
+    timeout?: number,
+  ): Promise<void> {
+    await this.perform('navigate', {url}, async () => {
+      const response = await this.getPage().goto(url, {
+        waitUntil: 'domcontentloaded',
+        timeout,
+      });
+
+      if (requireSuccess && !response?.ok())
+        throw new Error(
+          `Preview is not ready (HTTP ${response?.status() ?? 'unavailable'})`,
+        );
+    });
   }
 
   async fill(selector: string | BrowserLocator, value: string): Promise<void> {

@@ -15,6 +15,10 @@ class IssueStatusBadge extends StatelessWidget {
               : 'Queued'
         : status == 'cancelled'
         ? 'Cancelled'
+        : outcome == 'fixed'
+        ? 'Fixed'
+        : outcome == 'not_fixed'
+        ? 'Not fixed'
         : outcome == 'reproduced'
         ? 'Reproduced'
         : outcome == 'not_reproduced'
@@ -24,7 +28,7 @@ class IssueStatusBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
       decoration: BoxDecoration(
-        color: outcome == 'reproduced'
+        color: ['fixed', 'reproduced'].contains(outcome)
             ? RelayTokens.selected
             : RelayTokens.surface,
         border: Border.all(color: RelayTokens.border),
@@ -37,6 +41,8 @@ class IssueStatusBadge extends StatelessWidget {
 
 String issueOutcomeLabel(String? outcome) {
   return switch (outcome) {
+    'fixed' => 'Fixed',
+    'not_fixed' => 'Not fixed',
     'reproduced' => 'Reproduced',
     'not_reproduced' => 'Not reproduced',
     'inconclusive' => 'Uncertain',

@@ -7,6 +7,7 @@ import {
 import {Getter, inject} from '@loopback/core';
 import {
   BelongsToAccessor,
+  HasManyRepositoryFactory,
   DefaultTransactionalRepository,
   repository,
 } from '@loopback/repository';
@@ -25,6 +26,7 @@ export class GithubRepositoryRepository extends DefaultTransactionalRepository<
   GithubRepository,
   string
 > {
+  readonly environments: HasManyRepositoryFactory<Environment, string>;
   readonly workspace: BelongsToAccessor<Workspace, string>;
   readonly installation: BelongsToAccessor<GithubInstallation, string>;
   readonly defaultEnvironment: BelongsToAccessor<Environment, string>;
@@ -48,6 +50,11 @@ export class GithubRepositoryRepository extends DefaultTransactionalRepository<
       'installation',
       installationGetter,
     );
+    this.environments = this.createHasManyRepositoryFactoryFor(
+      'environments',
+      defaultEnvironmentGetter,
+    );
+
     this.defaultEnvironment = this.createBelongsToAccessorFor(
       'defaultEnvironment',
       defaultEnvironmentGetter,

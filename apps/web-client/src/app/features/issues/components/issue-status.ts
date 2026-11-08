@@ -4,7 +4,7 @@ import { Component, computed, input } from '@angular/core';
   selector: 'app-issue-status',
   template: `<span
     class="badge"
-    [class.confirmed]="outcome() === 'reproduced'"
+    [class.confirmed]="outcome() === 'reproduced' || outcome() === 'fixed'"
     [class.working]="!finished()"
     >{{ label() }}</span
   >`,
@@ -36,6 +36,8 @@ export class IssueStatus {
   protected readonly label = computed(() => {
     if (!this.finished()) return this.status() === 'running' ? 'In progress' : 'Queued';
     if (this.status() === 'cancelled') return 'Cancelled';
+    if (this.outcome() === 'fixed') return 'Fixed';
+    if (this.outcome() === 'not_fixed') return 'Not fixed';
     if (this.outcome() === 'reproduced') return 'Reproduced';
     if (this.outcome() === 'not_reproduced') return 'Not reproduced';
     return 'Uncertain';
@@ -43,6 +45,8 @@ export class IssueStatus {
 }
 
 export function issueOutcomeLabel(outcome: string | null | undefined): string {
+  if (outcome === 'fixed') return 'Fixed';
+  if (outcome === 'not_fixed') return 'Not fixed';
   if (outcome === 'reproduced') return 'Reproduced';
   if (outcome === 'not_reproduced') return 'Not reproduced';
   if (outcome === 'inconclusive') return 'Uncertain';

@@ -18,6 +18,8 @@ const installationSchema = z.object({
   permissions: z.object({
     issues: z.string().optional(),
     members: z.string().optional(),
+    pull_requests: z.string().optional(),
+    contents: z.string().optional(),
   }),
 });
 const repositorySchema = z.object({
@@ -365,6 +367,103 @@ export class GithubAppService {
     };
   }
 
+  private async requirePullRequestAccess(installationId: number, diff = false) {
+    const installation = await this.installation(installationId);
+    if (
+      !['read', 'write'].includes(
+        installation.permissions.pull_requests ?? '',
+      ) ||
+      (diff &&
+        !['read', 'write'].includes(installation.permissions.contents ?? ''))
+    ) {
+      throw new HttpErrors.Forbidden(
+        'Pull requests (read) and Contents (read) permissions are required for PR verification. Approve the updated GitHub App permissions for this installation.',
+      );
+    }
+  }
+
+  async getPullRequest(
+    installationId: number,
+    repositoryId: number,
+    number: number,
+  ) {
+    await this.requirePullRequestAccess(installationId);
+    const repo = await this.requireRepository(installationId, repositoryId);
+    const path = repo.full_name.split('/').map(encodeURIComponent).join('/');
+    const pr = this.parse(
+      z.object({
+        id: z.number().int().positive(),
+        number: z.number().int().positive(),
+        html_url: z.url(),
+        title: z.string(),
+        body: z.string().nullable(),
+        base: z.object({sha: z.string().regex(/^[0-9a-f]{40,64}$/)}),
+        head: z.object({sha: z.string().regex(/^[0-9a-f]{40,64}$/)}),
+      }),
+      await this.installedRequest(
+        installationId,
+        `/repos/${path}/pulls/${number}`,
+      ),
+    );
+
+    if (pr.number !== number)
+      throw new HttpErrors.Conflict('Pull request identity changed');
+
+    return {
+      githubId: pr.id,
+      number: pr.number,
+      url: pr.html_url,
+      title: pr.title,
+      body: pr.body ?? '',
+      baseSha: pr.base.sha,
+      headSha: pr.head.sha,
+    };
+  }
+
+  async getPullRequestFiles(
+    installationId: number,
+    repositoryId: number,
+    baseSha: string,
+    headSha: string,
+  ) {
+    await this.requirePullRequestAccess(installationId, true);
+    const repo = await this.requireRepository(installationId, repositoryId);
+    const path = repo.full_name.split('/').map(encodeURIComponent).join('/');
+    const comparison = this.parse(
+      z.object({
+        files: z
+          .array(
+            z.object({
+              filename: z.string(),
+              status: z.string(),
+              patch: z.string().optional(),
+              blob_url: z.url(),
+              additions: z.number(),
+              deletions: z.number(),
+            }),
+          )
+          .default([]),
+      }),
+      await this.installedRequest(
+        installationId,
+        `/repos/${path}/compare/${encodeURIComponent(baseSha)}...${encodeURIComponent(headSha)}?per_page=1`,
+      ),
+    );
+    let remaining = 40000;
+    const files = comparison.files.slice(0, 100).map(file => {
+      const patch = (file.patch ?? '').slice(0, Math.min(8000, remaining));
+      remaining -= patch.length;
+
+      return {
+        ...file,
+        patch,
+        truncated: !file.patch || patch.length < file.patch.length,
+      };
+    });
+
+    return {files, truncated: comparison.files.length >= 100};
+  }
+
   async findTaskComment(
     installationId: number,
     repositoryId: number,
@@ -411,6 +510,35 @@ export class GithubAppService {
     throw new HttpErrors.ServiceUnavailable(
       'Comment reconciliation exceeded its page limit; no duplicate comment was sent',
     );
+  }
+
+  async updateComment(
+    installationId: number,
+    repositoryId: number,
+    commentId: number,
+    body: string,
+  ) {
+    if (
+      !Number.isSafeInteger(commentId) ||
+      commentId < 1 ||
+      !body.trim() ||
+      body.length > 65536
+    )
+      throw new HttpErrors.BadRequest('Invalid issue comment update');
+
+    const repo = await this.requireRepository(installationId, repositoryId);
+    const path = repo.full_name.split('/').map(encodeURIComponent).join('/');
+    const comment = this.parse(
+      z.object({id: z.number().int().positive(), html_url: z.url()}),
+      await this.installedRequest(
+        installationId,
+        `/repos/${path}/issues/comments/${commentId}`,
+        'PATCH',
+        {body},
+      ),
+    );
+
+    return {githubId: comment.id, url: comment.html_url};
   }
 
   async createComment(

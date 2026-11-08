@@ -217,7 +217,7 @@ export class IssueStageService {
       );
       if (
         new URL(sourceRun.agentInput!.targetUrl).toString() !==
-        new URL(environment.baseUrl).toString()
+        new URL(task.targetUrl ?? environment.baseUrl!).toString()
       ) {
         await this.tasks.updateById(
           taskId,
@@ -242,11 +242,14 @@ export class IssueStageService {
       }
 
       const issue = await this.issues.findById(
-        task.issueId,
+        task.issueId!,
         undefined,
         options,
       );
-      const agentInput = reproductionInput(task, issue, environment);
+      const agentInput = reproductionInput(task, issue, {
+        ...environment,
+        baseUrl: task.targetUrl ?? environment.baseUrl!,
+      });
       agentInput.verification = {
         kind: request.stage,
         sourceRunId: source.runId,

@@ -2,8 +2,9 @@ import {positiveInteger} from './config';
 import {AgentInput} from './types';
 
 export function stageLimits(input: AgentInput) {
-  const prefix =
-    input.verification?.kind === 'critic'
+  const prefix = input.fixVerification
+    ? 'AI_FIX_VERIFICATION'
+    : input.verification?.kind === 'critic'
       ? 'AI_CRITIC'
       : input.verification
         ? 'AI_STEP_VERIFICATION'

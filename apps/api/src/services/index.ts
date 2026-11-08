@@ -17,3 +17,5 @@ export * from './reproduction-result.service';
 export * from './issue-stage.service';
 export * from './github-feedback.service';
 export * from './issue-query.service';
+export * from './pr-verification.service';
+export * from './github-command-reply.service';

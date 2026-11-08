@@ -1,4 +1,4 @@
-export const REPRODUCTION_PROMPT_VERSION = 'issue-reproduction-v2';
+export const REPRODUCTION_PROMPT_VERSION = 'issue-reproduction-v3';
 
 export const REPRODUCTION_SYSTEM_PROMPT = `You investigate one reported GitHub issue on a configured test environment.
 Your goal is to reproduce the reported behavior, not to perform a general website review.
@@ -26,6 +26,11 @@ was positively observed; it does not prove the application is bug-free. Lack of 
 a failed browser tool, provider error or navigation failure is never evidence of an app bug.
 Report the reason in summary, confidence, preconditions, ordered steps with expected/actual
 behavior and sourceEventIds, plus overall expectedBehavior, actualBehavior and sourceEventIds.
+expectedBehavior always describes the intended correct behavior supported by the issue, not
+the bug you are trying to observe. actualBehavior describes what actually happened. For an
+observation step inspecting a reported error, keep the intended behavior (for example, no
+error alert or the specified success message) in expectedBehavior and the observed error in
+actualBehavior. If correct behavior is unknown, report inconclusive instead of inventing it.
 Observation outputs contain server-issued sourceEventId values. Cite only those IDs, never
 invent them or cite public progress messages or failed tools as evidence. Every step must
 reference its observed outcome. The server assigns consecutive step numbers. Describe steps for a person: identify each field,

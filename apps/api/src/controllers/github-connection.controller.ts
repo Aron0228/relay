@@ -114,7 +114,7 @@ export class GithubConnectionController {
         .object({
           installationId: z.uuid(),
           githubId,
-          environmentId: z.uuid(),
+          environmentId: z.uuid().nullish(),
         })
         .strict(),
       body,

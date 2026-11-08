@@ -2,7 +2,11 @@ import {BindingScope, injectable} from '@loopback/core';
 import {IsolationLevel, repository, Transaction} from '@loopback/repository';
 import {HttpErrors} from '@loopback/rest';
 import {allowedOrigins, approvedUrl} from '../ai/config';
-import {Environment, Workspace, WorkspaceRole} from '../models';
+import {
+  environmentTarget,
+  normalizeEnvironmentOrigin,
+} from '../ai/environment-target';
+import {Workspace, WorkspaceRole} from '../models';
 import {
   EnvironmentRepository,
   UserRepository,
@@ -365,10 +369,24 @@ export class WorkspaceService {
   async listEnvironments(workspaceId: string, userId: string) {
     await this.requireMember(workspaceId, userId);
 
-    return this.environments.find({
+    const environments = await this.environments.find({
       where: {workspaceId, deletedAt: {eq: null as unknown as Date}},
       order: ['createdAt ASC'],
     });
+    const repositories = (await this.environments.execute(
+      'SELECT id, full_name AS "fullName", default_environment_id AS "defaultEnvironmentId" FROM github.repository WHERE workspace_id = $1 AND disconnected_at IS NULL',
+      [workspaceId],
+    )) as {id: string; fullName: string; defaultEnvironmentId: string | null}[];
+
+    return environments.map(environment => ({
+      ...environment.toJSON(),
+      repositoryName:
+        repositories.find(item => item.id === environment.repositoryId)
+          ?.fullName ?? null,
+      isDefault: repositories.some(
+        item => item.defaultEnvironmentId === environment.id,
+      ),
+    }));
   }
 
   async environment(workspaceId: string, userId: string, id: string) {
@@ -379,28 +397,110 @@ export class WorkspaceService {
 
     if (!environment) throw new HttpErrors.NotFound('Environment not found');
 
-    return environment;
+    try {
+      return {
+        ...environment.toJSON(),
+        id: environment.id,
+        name: environment.name,
+        baseUrl: environmentTarget(environment),
+      };
+    } catch {
+      throw new HttpErrors.UnprocessableEntity(
+        'This environment needs a concrete base URL before a test can start',
+      );
+    }
   }
 
   async saveEnvironment(
     workspaceId: string,
     userId: string,
-    data: Pick<Environment, 'name' | 'baseUrl'>,
+    data: {
+      name: string;
+      baseUrl?: string | null;
+      repositoryId?: string | null;
+      allowedOrigins?: string[];
+    },
     id?: string,
   ) {
-    let baseUrl: string;
+    let baseUrl: string | null = null;
+    let origins: string[] | undefined;
 
     try {
-      baseUrl = approvedUrl(data.baseUrl, allowedOrigins());
-    } catch {
+      if (data.baseUrl) baseUrl = approvedUrl(data.baseUrl, allowedOrigins());
+      if (data.allowedOrigins)
+        origins = [
+          ...new Set(data.allowedOrigins.map(normalizeEnvironmentOrigin)),
+        ];
+    } catch (error) {
       throw new HttpErrors.BadRequest(
-        'Environment URL must use an approved origin',
+        `Invalid environment URL configuration: ${(error as Error).message}`,
       );
     }
 
     return this.locked(workspaceId, async transaction => {
       await this.requireMember(workspaceId, userId, true, transaction);
-      const values = {name: data.name.trim(), baseUrl};
+      const options = {transaction};
+      const existing = id
+        ? await this.environments.findOne(
+            {
+              where: {
+                id,
+                workspaceId,
+                deletedAt: {eq: null as unknown as Date},
+              },
+            },
+            options,
+          )
+        : null;
+      if (id && !existing)
+        throw new HttpErrors.NotFound('Environment not found');
+      const repositoryId =
+        data.repositoryId === undefined
+          ? existing?.repositoryId
+          : data.repositoryId;
+      const allowed = origins ?? existing?.allowedOrigins ?? [];
+
+      if (!baseUrl && !allowed.length)
+        throw new HttpErrors.BadRequest(
+          'Provide a base URL or at least one allowed origin',
+        );
+      if (repositoryId) {
+        const linked = (await this.environments.execute(
+          `SELECT id FROM github.repository WHERE id = $1 AND workspace_id = $2 AND disconnected_at IS NULL`,
+          [repositoryId, workspaceId],
+          options,
+        )) as {id: string}[];
+        if (!linked.length)
+          throw new HttpErrors.NotFound('Repository not found');
+      }
+      if (id) {
+        const defaults = (await this.environments.execute(
+          'SELECT id FROM github.repository WHERE default_environment_id = $1',
+          [id],
+          options,
+        )) as {id: string}[];
+        if (defaults.length && (!baseUrl || repositoryId !== defaults[0].id))
+          throw new HttpErrors.Conflict(
+            'Choose another default environment before removing its base URL or changing its repository',
+          );
+        if (existing?.repositoryId && repositoryId !== existing.repositoryId) {
+          const history = (await this.environments.execute(
+            'SELECT id FROM execution.task WHERE environment_id = $1 LIMIT 1',
+            [id],
+            options,
+          )) as {id: string}[];
+          if (history.length)
+            throw new HttpErrors.Conflict(
+              'An environment with task history cannot move to another repository',
+            );
+        }
+      }
+      const values = {
+        name: data.name.trim(),
+        baseUrl,
+        repositoryId: repositoryId ?? (null as unknown as string),
+        allowedOrigins: allowed,
+      };
 
       if (id) {
         const {count} = await this.environments.updateAll(
@@ -421,6 +521,17 @@ export class WorkspaceService {
   async removeEnvironment(workspaceId: string, userId: string, id: string) {
     await this.locked(workspaceId, async transaction => {
       await this.requireMember(workspaceId, userId, true, transaction);
+      const defaults = (await this.environments.execute(
+        'SELECT id FROM github.repository WHERE workspace_id = $1 AND default_environment_id = $2 AND disconnected_at IS NULL',
+        [workspaceId, id],
+        {transaction},
+      )) as {id: string}[];
+
+      if (defaults.length)
+        throw new HttpErrors.Conflict(
+          'Choose another default test environment before deleting this environment',
+        );
+
       const {count} = await this.environments.updateAll(
         {deletedAt: new Date()},
         {id, workspaceId, deletedAt: {eq: null as unknown as Date}},

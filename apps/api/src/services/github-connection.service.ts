@@ -2,7 +2,8 @@ import {createHash, randomBytes} from 'node:crypto';
 import {BindingScope, injectable, service} from '@loopback/core';
 import {IsolationLevel, repository, Transaction} from '@loopback/repository';
 import {HttpErrors} from '@loopback/rest';
-import {allowedOrigins, approvedUrl, positiveInteger} from '../ai/config';
+import {positiveInteger} from '../ai/config';
+import {environmentTarget} from '../ai/environment-target';
 import {
   EnvironmentRepository,
   GithubInstallationRepository,
@@ -240,6 +241,7 @@ export class GithubConnectionService {
     workspaceId: string,
     id: string,
     transaction?: Transaction,
+    targetUrl?: string,
   ) {
     const environment = await this.environments.findOne(
       {where: {id, workspaceId, deletedAt: {eq: null as unknown as Date}}},
@@ -253,7 +255,10 @@ export class GithubConnectionService {
         ...environment.toJSON(),
         id: environment.id,
         name: environment.name,
-        baseUrl: approvedUrl(environment.baseUrl, allowedOrigins()),
+        baseUrl: environmentTarget(environment, targetUrl),
+        ...(environment.repositoryId
+          ? {repositoryId: environment.repositoryId}
+          : {}),
       };
     } catch {
       throw new HttpErrors.UnprocessableEntity(
@@ -267,7 +272,7 @@ export class GithubConnectionService {
     userId: string,
     installationId: string,
     githubId: number,
-    environmentId: string,
+    environmentId?: string | null,
   ) {
     await this.workspaces.requireMember(workspaceId, userId, true);
     const installation = await this.activeInstallation(
@@ -285,7 +290,6 @@ export class GithubConnectionService {
 
     return this.mutate(workspaceId, userId, async transaction => {
       await this.activeInstallation(workspaceId, installationId);
-      await this.environment(workspaceId, environmentId, transaction);
       const existing = await this.repositories.findOne(
         {where: {githubId}},
         {transaction},
@@ -300,20 +304,44 @@ export class GithubConnectionService {
           'This repository belongs to another connection',
         );
 
-      const data = {
-        fullName: remote.full_name,
-        defaultEnvironmentId: environmentId,
-        disconnectedAt: null,
-      };
+      const selectedId =
+        environmentId === undefined
+          ? existing?.defaultEnvironmentId
+          : environmentId;
+      const selected = selectedId
+        ? await this.environment(workspaceId, selectedId, transaction)
+        : null;
 
-      if (existing) {
-        await this.repositories.updateById(existing.id, data, {transaction});
+      if (selected?.repositoryId && selected.repositoryId !== existing?.id)
+        throw new HttpErrors.Conflict(
+          'The environment belongs to another repository',
+        );
 
-        return {id: existing.id};
-      }
+      const repo =
+        existing ??
+        (await this.repositories.create(
+          {
+            githubId,
+            workspaceId,
+            installationId,
+            fullName: remote.full_name,
+          },
+          {transaction},
+        ));
 
-      const repo = await this.repositories.create(
-        {githubId, workspaceId, installationId, ...data},
+      if (selected)
+        await this.environments.updateById(
+          selected.id,
+          {repositoryId: repo.id},
+          {transaction},
+        );
+      await this.repositories.updateById(
+        repo.id,
+        {
+          fullName: remote.full_name,
+          defaultEnvironmentId: selected?.id ?? (null as unknown as string),
+          disconnectedAt: null,
+        },
         {transaction},
       );
 
@@ -352,6 +380,7 @@ export class GithubConnectionService {
     repositoryId: string,
     workspaceId: string,
     environmentId?: string,
+    targetUrl?: string,
   ) {
     const repo = await this.repositories.findOne({
       where: {
@@ -381,10 +410,28 @@ export class GithubConnectionService {
       Number(installation.githubId),
       Number(repo.githubId),
     );
+    const selectedId = environmentId ?? repo.defaultEnvironmentId;
+
+    if (!selectedId)
+      throw new HttpErrors.UnprocessableEntity(
+        'Configure a default environment with a concrete base URL for this repository',
+      );
+
     const environment = await this.environment(
       workspaceId,
-      environmentId ?? repo.defaultEnvironmentId,
+      selectedId,
+      undefined,
+      targetUrl,
     );
+
+    if (environment.repositoryId && environment.repositoryId !== repo.id)
+      throw new HttpErrors.Forbidden(
+        'The environment belongs to another repository',
+      );
+    if (!environment.repositoryId && selectedId !== repo.defaultEnvironmentId)
+      throw new HttpErrors.Forbidden(
+        'Assign this environment to the repository before using it',
+      );
 
     const currentRepository = await this.repositories.findOne({
       where: {
@@ -440,6 +487,7 @@ export class GithubConnectionService {
       task.repositoryId,
       workspaceId,
       environmentId,
+      task.targetUrl,
     );
     await this.workspaces.requireMember(workspaceId, task.requestedBy);
 

@@ -1,7 +1,1 @@
-import { Component } from '@angular/core';
-
-@Component({
-  selector: 'app-pull-requests',
-  template: '',
-})
-export class PullRequestsPage {}
+export { IssuesPage as PullRequestsPage } from '../issues/issues';

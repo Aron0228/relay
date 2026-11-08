@@ -352,7 +352,7 @@ export class RunController {
       environmentId: run.environmentId,
       scriptName: run.scriptName,
       title: run.taskId
-        ? `${run.stage?.replace(/_/g, ' ')}: ${run.agentInput?.reproduction?.issue.title ?? 'Issue investigation'}`
+        ? `${run.stage?.replace(/_/g, ' ')}: ${run.agentInput?.fixVerification?.title ?? run.agentInput?.reproduction?.issue.title ?? 'Issue investigation'}`
         : (run.agentInput?.prompt ?? 'Example browser test'),
       targetUrl: run.agentInput?.targetUrl,
       cancelRequested: run.cancelRequested,

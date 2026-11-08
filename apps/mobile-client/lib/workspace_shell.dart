@@ -547,12 +547,13 @@ class _WorkspaceShellState extends State<WorkspaceShell> {
               ),
             if (widget.sessions != null &&
                 _workspace != null &&
-                _selected == 'Issues')
+                (_selected == 'Issues' || _selected == 'Pull Requests'))
               Padding(
                 padding: const EdgeInsets.only(top: 24),
                 child: IssuesPage(
-                  key: ValueKey(widget.sessions!.workspaceId),
+                  key: ValueKey('${widget.sessions!.workspaceId}-$_selected'),
                   sessions: widget.sessions!,
+                  pullRequests: _selected == 'Pull Requests',
                 ),
               ),
             if (widget.error != null)

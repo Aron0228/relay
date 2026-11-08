@@ -1,3 +1,4 @@
+import {verificationStepError} from './verification-steps';
 import {describeBrowserAction, isBareBrowserAction} from './browser-action';
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
@@ -11,6 +12,8 @@ import {
   ReproductionInput,
   REPRODUCTION_VERDICT,
   VerificationInput,
+  FixVerificationInput,
+  FIX_VERDICT,
 } from './types';
 
 const text = z.string().min(1).max(4000);
@@ -29,18 +32,47 @@ export const reproductionFinishSchema = z
               'A human-readable instruction identifying the target and test value, for example: Enter "Finn" into the First Name textbox. Never just fill or click.',
             ),
             sourceStepNumber: z.number().int().min(1).max(100).optional(),
-            expectedBehavior: text,
-            actualBehavior: text,
+            expectedBehavior: text.describe(
+              'The intended correct behavior supported by the requirements. Do not describe the reported bug as the expected behavior.',
+            ),
+            actualBehavior: text.describe(
+              'What this browser session actually observed, including any reported bug.',
+            ),
             sourceEventIds: eventIds,
           })
           .strict(),
       )
       .max(100),
-    expectedBehavior: text,
-    actualBehavior: text,
+    expectedBehavior: text.describe(
+      'The intended correct behavior supported by the requirements, separate from the observed bug.',
+    ),
+    actualBehavior: text.describe(
+      'What this browser session actually observed.',
+    ),
     sourceEventIds: eventIds,
   })
   .strict();
+
+export const verificationFinishSchema = reproductionFinishSchema.extend({
+  steps: z
+    .array(
+      reproductionFinishSchema.shape.steps.element.extend({
+        sourceStepNumber: z
+          .number()
+          .int()
+          .min(1)
+          .max(100)
+          .describe(
+            'Required: the number of the original verification.steps entry checked by this step. Preserve the original order; wording may differ.',
+          ),
+      }),
+    )
+    .max(100),
+});
+
+export const fixFinishSchema = reproductionFinishSchema.extend({
+  verdict: z.enum(Object.values(FIX_VERDICT)),
+});
 
 export const REPRODUCTION_TOOLS: AgentTool[] = BROWSER_TOOLS.map(tool =>
   tool.function.name === 'finish'
@@ -51,6 +83,34 @@ export const REPRODUCTION_TOOLS: AgentTool[] = BROWSER_TOOLS.map(tool =>
           description:
             'Report whether the issue was reproduced, using observed evidence and ordered reproduction steps. Findings are provisional until independently verified.',
           parameters: z.toJSONSchema(reproductionFinishSchema),
+        },
+      }
+    : tool,
+);
+
+export const VERIFICATION_TOOLS: AgentTool[] = REPRODUCTION_TOOLS.map(tool =>
+  tool.function.name === 'finish'
+    ? {
+        type: 'function',
+        function: {
+          name: 'finish',
+          description:
+            'Report the independent verification result. Map each reported step to its original sourceStepNumber and cite observations from this browser session. Invalid reports can be corrected without repeating browser actions.',
+          parameters: z.toJSONSchema(verificationFinishSchema),
+        },
+      }
+    : tool,
+);
+
+export const FIX_VERIFICATION_TOOLS = REPRODUCTION_TOOLS.map(tool =>
+  tool.function.name === 'finish'
+    ? {
+        type: 'function' as const,
+        function: {
+          name: 'finish',
+          description:
+            'Report fixed, not_fixed or inconclusive using only observations from this session.',
+          parameters: z.toJSONSchema(fixFinishSchema),
         },
       }
     : tool,
@@ -70,26 +130,29 @@ export class ReproductionSession {
   );
 
   constructor(
-    private input: ReproductionInput,
+    private input: ReproductionInput | undefined,
     browser: PlaywrightInterface,
     private emit: AgentEvent,
     private verification?: VerificationInput,
+    private fixVerification?: FixVerificationInput,
   ) {
     this.browserTools = new BrowserTools(browser, allowedOrigins());
   }
 
   context() {
+    if (this.fixVerification) return {fixVerification: this.fixVerification};
+
     return {
       issue: {
-        ...this.input.issue,
-        title: this.input.issue.title.slice(0, 500),
-        body: this.input.issue.body.slice(0, 16000),
-        bodyTruncated: this.input.issue.body.length > 16000,
+        ...this.input!.issue,
+        title: this.input!.issue.title.slice(0, 500),
+        body: this.input!.issue.body.slice(0, 16000),
+        bodyTruncated: this.input!.issue.body.length > 16000,
       },
-      environment: this.input.environment,
+      environment: this.input!.environment,
       verification: this.verification,
-      expectedBehavior: this.input.expectedBehavior,
-      reportedBehavior: this.input.reportedBehavior,
+      expectedBehavior: this.input?.expectedBehavior,
+      reportedBehavior: this.input?.reportedBehavior,
     };
   }
 
@@ -130,19 +193,53 @@ export class ReproductionSession {
   parseTextVerdict(content: string | null): AgentConclusion | undefined {
     if (!content) return undefined;
 
+    let raw: unknown;
+
     try {
-      return this.conclusion(
-        JSON.parse(
-          content.trim().replace(/^```(?:json)?\s*\n([\s\S]*?)\n```$/, '$1'),
-        ),
+      raw = JSON.parse(
+        content.trim().replace(/^```(?:json)?\s*\n([\s\S]*?)\n```$/, '$1'),
       );
     } catch {
+      return undefined;
+    }
+
+    try {
+      return this.conclusion(raw);
+    } catch (error) {
+      if (this.verification) throw error;
+
       return undefined;
     }
   }
 
   private conclusion(raw: unknown): AgentConclusion {
-    const result = reproductionFinishSchema.parse(raw);
+    const schema = this.fixVerification
+      ? fixFinishSchema
+      : this.verification
+        ? verificationFinishSchema
+        : reproductionFinishSchema;
+    const parsed = schema.safeParse(raw);
+
+    if (!parsed.success) {
+      const issues = parsed.error.issues
+        .map(issue => `${issue.path.join('.')}: ${issue.message}`)
+        .join('; ');
+      throw new Error(
+        `Invalid finish report: ${issues}. Correct the report using the observations already collected; do not repeat successful browser actions.`,
+      );
+    }
+
+    const result = parsed.data;
+
+    if (this.verification) {
+      const error = verificationStepError(
+        this.verification,
+        result.steps,
+        result.verdict !== REPRODUCTION_VERDICT.Inconclusive,
+      );
+
+      if (error) throw new Error(error);
+    }
     const references = [
       ...result.sourceEventIds,
       ...result.steps.flatMap(step => step.sourceEventIds),
@@ -224,7 +321,9 @@ export class ReproductionSession {
         preconditions: [],
         steps: [],
         expectedBehavior:
-          this.input.expectedBehavior ?? 'Not established from the issue',
+          this.fixVerification?.expectedBehavior ??
+          this.input?.expectedBehavior ??
+          'Not established from the issue',
         actualBehavior: 'Insufficient evidence to conclude',
         sourceEventIds: [],
       },

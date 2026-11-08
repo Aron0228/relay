@@ -160,7 +160,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Edit'));
     await tester.pumpAndSettle();
-    expect(find.text('Approved environment'), findsOneWidget);
+    expect(find.text('Default test environment'), findsOneWidget);
     await tester.tap(find.text('Save repository'));
     await tester.pumpAndSettle();
     expect(saved, {

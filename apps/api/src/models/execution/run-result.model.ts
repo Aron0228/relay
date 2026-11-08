@@ -2,6 +2,7 @@ import {Entity, model, property} from '@loopback/repository';
 import {AgentResult} from '../../ai/types';
 
 export const RUN_RESULT_TYPE = {
+  FixVerification: 'fix-verification',
   BrowserTest: 'browser-test',
   IssueReproduction: 'issue-reproduction',
   StepVerification: 'step-verification',

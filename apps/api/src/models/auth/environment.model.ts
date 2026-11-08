@@ -1,4 +1,5 @@
-import {Entity, model, property} from '@loopback/repository';
+import {belongsTo, Entity, model, property} from '@loopback/repository';
+import {GithubRepository} from '../github/repository.model';
 
 @model({
   settings: {forceId: true, postgresql: {schema: 'auth', table: 'environment'}},
@@ -28,9 +29,26 @@ export class Environment extends Entity {
   @property({
     type: 'string',
     postgresql: {columnName: 'base_url', dataType: 'text'},
-    required: true,
   })
-  baseUrl!: string;
+  baseUrl?: string | null;
+
+  @belongsTo(
+    () => GithubRepository,
+    {name: 'repository'},
+    {
+      type: 'string',
+      postgresql: {columnName: 'repository_id', dataType: 'uuid'},
+    },
+  )
+  repositoryId?: string;
+
+  @property({
+    type: 'array',
+    itemType: 'string',
+    default: [],
+    postgresql: {columnName: 'allowed_origins', dataType: 'jsonb'},
+  })
+  allowedOrigins!: string[];
 
   @property({
     type: 'date',

@@ -1,4 +1,10 @@
-import {belongsTo, Entity, model, property} from '@loopback/repository';
+import {
+  belongsTo,
+  hasMany,
+  Entity,
+  model,
+  property,
+} from '@loopback/repository';
 import {Workspace} from '../auth/workspace.model';
 import {GithubInstallation} from './installation.model';
 import {Environment} from '../auth/environment.model';
@@ -47,11 +53,10 @@ export class GithubRepository extends Entity {
     {name: 'defaultEnvironment'},
     {
       type: 'string',
-      required: true,
       postgresql: {columnName: 'default_environment_id', dataType: 'uuid'},
     },
   )
-  defaultEnvironmentId!: string;
+  defaultEnvironmentId?: string;
 
   @property({
     type: 'string',
@@ -71,6 +76,9 @@ export class GithubRepository extends Entity {
     postgresql: {columnName: 'disconnected_at', dataType: 'timestamptz'},
   })
   disconnectedAt?: Date | null;
+
+  @hasMany(() => Environment, {keyTo: 'repositoryId'})
+  environments?: Environment[];
 
   constructor(data?: Partial<GithubRepository>) {
     super(data);

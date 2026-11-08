@@ -1,7 +1,9 @@
+import '../../widgets/app_dropdown.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../session_service.dart';
 import 'workspace_api.dart';
+import 'workspace_environment_form.dart';
 import 'workspace_github_settings.dart';
 import 'workspace_side_panel.dart';
 import 'workspace_image_field.dart';
@@ -187,24 +189,29 @@ class _WorkspaceSettingsState extends State<WorkspaceSettings> {
   }
 
   Future<void> _environment([Map<String, dynamic>? environment]) async {
-    final data = await _form(
-      environment == null ? 'New environment' : 'Edit environment',
-      {
-        'Name': environment?['name'] as String? ?? '',
-        'Base URL': environment?['baseUrl'] as String? ?? '',
-      },
-    );
-
-    if (data == null || !mounted) return;
+    List<Map<String, dynamic>>? repositories;
 
     await _perform(() async {
-      await _api.request(
-        environment == null ? 'POST' : 'PATCH',
-        '$_path/environments${environment == null ? '' : '/${environment['id']}'}',
-        {'name': data['Name'], 'baseUrl': data['Base URL']},
-      );
-      await _load();
+      final connection =
+          await _api.request('GET', '$_path/github') as Map<String, dynamic>;
+      repositories = (connection['repositories'] as List)
+          .cast<Map<String, dynamic>>();
     });
+
+    if (!mounted || repositories == null) return;
+
+    final saved = await showWorkspaceSidePanel<bool>(
+      context: context,
+      title: environment == null ? 'New environment' : 'Edit environment',
+      builder: (_) => WorkspaceEnvironmentForm(
+        api: _api,
+        workspacePath: _path,
+        repositories: repositories!,
+        environment: environment,
+      ),
+    );
+
+    if (saved == true && mounted) await _perform(_load);
   }
 
   Future<void> _invite() async {
@@ -229,7 +236,7 @@ class _WorkspaceSettingsState extends State<WorkspaceSettings> {
         builder: (context, update) => Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            DropdownButtonFormField<String>(
+            AppDropdown<String>(
               initialValue: role,
               decoration: const InputDecoration(labelText: 'Role'),
               items: const [
@@ -559,8 +566,18 @@ class _WorkspaceSettingsState extends State<WorkspaceSettings> {
       for (final environment in _environments)
         ListTile(
           contentPadding: EdgeInsets.zero,
-          title: Text(environment['name'] as String),
-          subtitle: Text(environment['baseUrl'] as String),
+          title: Text(
+            '${environment['name']}${environment['isDefault'] == true ? ' · Default test environment' : ''}',
+          ),
+          subtitle: Text(
+            [
+              if (environment['repositoryName'] != null)
+                environment['repositoryName'],
+              environment['baseUrl'] ??
+                  'PR preview · URL supplied in the command',
+              ...(environment['allowedOrigins'] as List? ?? []),
+            ].join('\n'),
+          ),
           trailing: _admin
               ? PopupMenuButton<String>(
                   enabled: !_busy,

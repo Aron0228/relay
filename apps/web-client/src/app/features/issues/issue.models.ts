@@ -44,7 +44,29 @@ export interface IssueRunGroup {
   runs: IssueRun[];
 }
 
+export interface PrContext {
+  model?: string;
+  promptVersion?: string;
+  id: string;
+  headSha: string;
+  status: string;
+  error?: string;
+  data?: {
+    summary: string;
+    affectedSurfaces: string[];
+    preconditions: string[];
+    steps: string[];
+    expectedBehavior: string;
+    uncertainties: string[];
+    sourceIds: string[];
+  };
+  sources: { id: string; kind: string; url: string; content: string; truncated: boolean }[];
+}
+
 export interface IssueDetail {
+  context?: PrContext | null;
+  targetUrl?: string;
+  headSha?: string;
   id: string;
   number: number;
   title: string;

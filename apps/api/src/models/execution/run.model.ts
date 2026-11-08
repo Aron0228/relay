@@ -3,6 +3,7 @@ import {Task} from './task.model';
 import {belongsTo, Entity, model, property} from '@loopback/repository';
 
 export const RUN_STAGE = {
+  FixVerification: 'fix_verification',
   Reproduction: 'reproduction',
   StepVerification: 'step_verification',
   Critic: 'critic',

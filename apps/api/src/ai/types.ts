@@ -1,3 +1,4 @@
+import {PrContextData} from './pr-context';
 /* eslint-disable @typescript-eslint/naming-convention -- Chat Completions protocol uses snake_case fields. */
 export const AGENT_VERDICT = {
   Passed: 'passed',
@@ -26,6 +27,7 @@ export interface AgentInput {
   targetUrl: string;
   reproduction?: ReproductionInput;
   verification?: VerificationInput;
+  fixVerification?: FixVerificationInput;
 }
 
 export const REPRODUCTION_VERDICT = {
@@ -36,6 +38,18 @@ export const REPRODUCTION_VERDICT = {
 
 export type ReproductionVerdict =
   (typeof REPRODUCTION_VERDICT)[keyof typeof REPRODUCTION_VERDICT];
+
+export const FIX_VERDICT = {
+  Fixed: 'fixed',
+  NotFixed: 'not_fixed',
+  Inconclusive: 'inconclusive',
+} as const;
+export type FixVerdict = (typeof FIX_VERDICT)[keyof typeof FIX_VERDICT];
+export interface FixVerificationInput extends PrContextData {
+  title: string;
+  contextId: string;
+  headSha: string;
+}
 
 export interface ReproductionInput {
   issue: {id: string; number: number; url: string; title: string; body: string};
@@ -74,7 +88,7 @@ export interface ReproductionDetails {
 }
 
 export interface AgentConclusion {
-  verdict: AgentVerdict | ReproductionVerdict;
+  verdict: AgentVerdict | ReproductionVerdict | FixVerdict;
   summary: string;
   confidence: number;
   steps: string[];

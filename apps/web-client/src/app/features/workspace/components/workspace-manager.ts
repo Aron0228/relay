@@ -1,3 +1,4 @@
+import { SelectField } from '../../../shared/select-field';
 import { Component, inject, input, OnInit, signal } from '@angular/core';
 import { LucideDynamicIcon, LucideInfo } from '@lucide/angular';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -17,6 +18,7 @@ import {
 @Component({
   selector: 'app-workspace-manager',
   imports: [
+    SelectField,
     LucideDynamicIcon,
     FormsModule,
     WorkspaceAvatarUpload,
@@ -170,7 +172,16 @@ import {
               <div class="row environment-row">
                 <div class="identity">
                   <strong>{{ environment.name }}</strong
-                  ><span>{{ environment.baseUrl }}</span>
+                  ><span>{{
+                    environment.baseUrl || 'PR preview · URL supplied in the command'
+                  }}</span>
+                  <span
+                    >{{ environment.repositoryName || repositoryName(environment.repositoryId)
+                    }}{{ environment.isDefault ? ' · Default test environment' : '' }}</span
+                  >
+                  @if (environment.allowedOrigins?.length) {
+                    <span>{{ environment.allowedOrigins!.join(', ') }}</span>
+                  }
                 </div>
                 @if (workspaces.admin()) {
                   <div class="row-actions">
@@ -219,9 +230,34 @@ import {
                   name="baseUrl"
                   [(ngModel)]="baseUrl"
                   type="url"
-                  required
-                  placeholder="https://example.com"
+                  placeholder="https://example-url.com"
               /></label>
+              <p class="hint">
+                Required for the repository's default test environment. Leave empty for dynamic PR
+                previews.
+              </p>
+              <label
+                >Repository<app-select-field
+                  ><select name="environmentRepository" [(ngModel)]="environmentRepositoryId">
+                    <option value="">Not assigned</option>
+                    @for (repository of repositories(); track repository.id) {
+                      <option [value]="repository.id">{{ repository.fullName }}</option>
+                    }
+                  </select></app-select-field
+                ></label
+              >
+              <label
+                >Allowed websites<textarea
+                  name="environmentOrigins"
+                  [(ngModel)]="environmentOrigins"
+                  rows="3"
+                  placeholder="https://example-url.com"
+                ></textarea>
+              </label>
+              <p class="hint">
+                Enter the website addresses allowed for PR tests, one per line. Use
+                https://*.example-url.com to allow all subdomains.
+              </p>
               <div class="form-actions">
                 <button class="primary" [disabled]="busy() || environmentForm.invalid">
                   Save environment
@@ -259,10 +295,12 @@ import {
           } @else if (selectedMember(); as member) {
             <form (ngSubmit)="saveMember()">
               <label
-                >Role<select name="role" [(ngModel)]="memberRole">
-                  <option value="member">Member</option>
-                  <option value="admin">Admin</option>
-                </select></label
+                >Role<app-select-field
+                  ><select name="role" [(ngModel)]="memberRole">
+                    <option value="member">Member</option>
+                    <option value="admin">Admin</option>
+                  </select></app-select-field
+                ></label
               >
               <p>Choose this member’s permissions within the workspace.</p>
               <div class="form-actions">
@@ -295,6 +333,7 @@ export class WorkspaceManager implements OnInit {
   protected readonly sent = signal<WorkspaceInvitation[]>([]);
   protected readonly members = signal<WorkspaceMember[]>([]);
   protected readonly environments = signal<Environment[]>([]);
+  protected readonly repositories = signal<{ id: string; fullName: string }[]>([]);
   protected avatarFile: File | null = null;
   protected readonly panel = signal<'environment' | 'invitation' | 'member' | null>(null);
   protected readonly selectedMember = signal<WorkspaceMember | null>(null);
@@ -323,6 +362,7 @@ export class WorkspaceManager implements OnInit {
     this.resetEnvironment();
     this.error.set('');
     this.panel.set('environment');
+    void this.loadEnvironmentRepositories();
   }
 
   protected editMember(member: WorkspaceMember) {
@@ -337,6 +377,8 @@ export class WorkspaceManager implements OnInit {
   protected environmentId = '';
   protected environmentName = '';
   protected baseUrl = '';
+  protected environmentRepositoryId = '';
+  protected environmentOrigins = '';
 
   ngOnInit() {
     void this.perform(() => this.load());
@@ -464,25 +506,55 @@ export class WorkspaceManager implements OnInit {
       });
   }
 
+  private async loadEnvironmentRepositories() {
+    try {
+      const connection = await this.workspaces.request<{
+        repositories: { id: string; fullName: string }[];
+      }>('GET', `${this.path()}/github`);
+      this.repositories.set(connection.repositories);
+    } catch {
+      this.error.set('Could not load repositories. Please try again.');
+    }
+  }
+
+  protected repositoryName(id?: string | null) {
+    return (
+      this.repositories().find((item) => item.id === id)?.fullName ?? 'Not assigned to a repository'
+    );
+  }
+
   protected editEnvironment(environment: Environment) {
     this.error.set('');
     this.panel.set('environment');
+    void this.loadEnvironmentRepositories();
     this.environmentId = environment.id;
     this.environmentName = environment.name;
-    this.baseUrl = environment.baseUrl;
+    this.baseUrl = environment.baseUrl ?? '';
+    this.environmentRepositoryId = environment.repositoryId ?? '';
+    this.environmentOrigins = (environment.allowedOrigins ?? []).join('\n');
   }
 
   protected resetEnvironment() {
     this.environmentId = '';
     this.environmentName = '';
     this.baseUrl = '';
+    this.environmentRepositoryId = '';
+    this.environmentOrigins = '';
   }
 
   protected async saveEnvironment() {
     await this.workspaces.request(
       this.environmentId ? 'PATCH' : 'POST',
       `${this.path()}/environments${this.environmentId ? '/' + this.environmentId : ''}`,
-      { name: this.environmentName, baseUrl: this.baseUrl },
+      {
+        name: this.environmentName,
+        baseUrl: this.baseUrl || null,
+        repositoryId: this.environmentRepositoryId || null,
+        allowedOrigins: this.environmentOrigins
+          .split(/[,\n]/)
+          .map((value) => value.trim())
+          .filter(Boolean),
+      },
     );
     this.resetEnvironment();
     this.panel.set(null);

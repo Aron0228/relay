@@ -89,7 +89,7 @@ it('selects a reachable repository and submits only its approved environment map
   await fixture.whenStable();
   fixture.detectChanges();
   expect(page.querySelector('app-workspace-side-panel')!.textContent).toContain(
-    'Approved environment',
+    'Default test environment',
   );
   expect(page.querySelector('app-workspace-side-panel')!.textContent).not.toContain('Cancel');
   button('Save repository').click();

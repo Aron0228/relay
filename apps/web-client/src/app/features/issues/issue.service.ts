@@ -11,7 +11,7 @@ export class IssueService {
   private readonly http = inject(HttpClient);
   private readonly workspaces = inject(WorkspaceService);
 
-  list(search: string, before?: string) {
+  list(search: string, before?: string, resource = 'issues') {
     const workspaceId = this.workspaces.active()?.id;
     if (!workspaceId) return Promise.resolve({ items: [] as IssueItem[], nextCursor: null });
 
@@ -20,17 +20,23 @@ export class IssueService {
     if (before) params = params.set('before', before);
 
     return firstValueFrom(
-      this.http.get<{ items: IssueItem[]; nextCursor: string | null }>(`${API_BASE_URL}/issues`, {
-        params,
-        withCredentials: true,
-      }),
+      this.http.get<{ items: IssueItem[]; nextCursor: string | null }>(
+        `${API_BASE_URL}/${resource}`,
+        {
+          params,
+          withCredentials: true,
+        },
+      ),
     );
   }
 
-  get(id: string, taskId?: string) {
+  get(id: string, taskId?: string, resource = 'issues') {
     const params = taskId ? new HttpParams().set('taskId', taskId) : undefined;
     return firstValueFrom(
-      this.http.get<IssueDetail>(`${API_BASE_URL}/issues/${id}`, { params, withCredentials: true }),
+      this.http.get<IssueDetail>(`${API_BASE_URL}/${resource}/${id}`, {
+        params,
+        withCredentials: true,
+      }),
     );
   }
 
