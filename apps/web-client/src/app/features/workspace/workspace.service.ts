@@ -17,7 +17,11 @@ export interface Workspace {
 export interface Environment {
   id: string;
   name: string;
-  baseUrl: string;
+  baseUrl?: string | null;
+  repositoryId?: string | null;
+  allowedOrigins?: string[];
+  repositoryName?: string | null;
+  isDefault?: boolean;
 }
 export interface WorkspaceMember {
   userId: string;

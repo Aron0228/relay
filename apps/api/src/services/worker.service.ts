@@ -352,6 +352,16 @@ export class WorkerService {
         },
         options,
       );
+      if (task.kind === 'pr_verification') {
+        await this.tasks.execute(
+          `UPDATE execution.pr_context SET status = 'cancelled',
+          error = 'Context collection was cancelled.', completed_at = now(), lease_token = NULL, lease_expires_at = NULL
+          WHERE task_id = $1 AND status IN ('pending', 'collecting')`,
+          [taskId],
+          options,
+        );
+      }
+
       await this.runs.updateAll(
         {cancelRequested: true},
         {taskId, status: {inq: [RUN_STATUS.Queued, RUN_STATUS.Running]}},
@@ -550,7 +560,14 @@ export class WorkerService {
   }
 
   async stream(run: Run, response: Response, userId?: string): Promise<void> {
+    if (isRunFinished(run.status)) {
+      response.status(204).end();
+      return;
+    }
+
     await this.initialize();
+
+    if (response.destroyed || response.writableEnded) return;
 
     const subscriber = new Redis(this.redisOptions());
     const channel = this.frameChannel(run.id);
@@ -599,6 +616,9 @@ export class WorkerService {
 
     try {
       await subscriber.subscribe(channel);
+
+      if (closed) return;
+
       response.setHeader(
         'Content-Type',
         'multipart/x-mixed-replace; boundary=relay-frame',
@@ -612,6 +632,8 @@ export class WorkerService {
         write(latest);
       }
     } catch (error) {
+      if (closed) return;
+
       close();
       throw error;
     }
@@ -855,7 +877,7 @@ export class WorkerService {
         );
         exampleUrl = target.targetUrl;
         if (
-          run.agentInput?.verification &&
+          (run.agentInput?.verification || run.agentInput?.fixVerification) &&
           new URL(run.agentInput.targetUrl).toString() !==
             new URL(target.targetUrl).toString()
         ) {
@@ -868,7 +890,7 @@ export class WorkerService {
 
         if (run.stage === RUN_STAGE.Reproduction) {
           const task = await this.tasks.findById(run.taskId);
-          const issue = await this.issues.findById(task.issueId);
+          const issue = await this.issues.findById(task.issueId!);
 
           run.agentInput = reproductionInput(task, issue, {
             ...target.environment,
@@ -1172,13 +1194,15 @@ export class WorkerService {
             {
               runId: id,
               type:
-                run.stage === RUN_STAGE.Critic
-                  ? RUN_RESULT_TYPE.Critic
-                  : run.stage === RUN_STAGE.StepVerification
-                    ? RUN_RESULT_TYPE.StepVerification
-                    : run.taskId
-                      ? RUN_RESULT_TYPE.IssueReproduction
-                      : RUN_RESULT_TYPE.BrowserTest,
+                run.stage === RUN_STAGE.FixVerification
+                  ? RUN_RESULT_TYPE.FixVerification
+                  : run.stage === RUN_STAGE.Critic
+                    ? RUN_RESULT_TYPE.Critic
+                    : run.stage === RUN_STAGE.StepVerification
+                      ? RUN_RESULT_TYPE.StepVerification
+                      : run.taskId
+                        ? RUN_RESULT_TYPE.IssueReproduction
+                        : RUN_RESULT_TYPE.BrowserTest,
               status: agentResult.verdict,
               confidence: agentResult.confidence,
               result: agentResult,

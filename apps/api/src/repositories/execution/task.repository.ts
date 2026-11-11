@@ -4,6 +4,7 @@ import {
   Environment,
   GithubRepository,
   GithubIssue,
+  GithubPullRequest,
   User,
 } from '../../models';
 import {Getter, inject} from '@loopback/core';
@@ -21,6 +22,7 @@ import {EnvironmentRepository} from '../auth/environment.repository';
 import {GithubRepositoryRepository} from '../github/repository.repository';
 import {GithubIssueRepository} from '../github/issue.repository';
 import {UserRepository} from '../auth/user.repository';
+import {GithubPullRequestRepository} from '../github/pull-request.repository';
 
 export const TASK_REPOSITORY_BINDING_KEY = 'repositories.TaskRepository';
 
@@ -32,6 +34,7 @@ export class TaskRepository extends DefaultTransactionalRepository<
   readonly environment: BelongsToAccessor<Environment, string>;
   readonly repository: BelongsToAccessor<GithubRepository, string>;
   readonly issue: BelongsToAccessor<GithubIssue, string>;
+  readonly pullRequest: BelongsToAccessor<GithubPullRequest, string>;
   readonly requester: BelongsToAccessor<User, string>;
 
   constructor(
@@ -45,6 +48,8 @@ export class TaskRepository extends DefaultTransactionalRepository<
     @repository.getter(GithubIssueRepository)
     issueGetter: Getter<GithubIssueRepository>,
     @repository.getter(UserRepository) requesterGetter: Getter<UserRepository>,
+    @repository.getter(GithubPullRequestRepository)
+    pullRequestGetter: Getter<GithubPullRequestRepository>,
   ) {
     super(Task, dataSource);
 
@@ -61,6 +66,10 @@ export class TaskRepository extends DefaultTransactionalRepository<
       repositoryGetter,
     );
     this.issue = this.createBelongsToAccessorFor('issue', issueGetter);
+    this.pullRequest = this.createBelongsToAccessorFor(
+      'pullRequest',
+      pullRequestGetter,
+    );
     this.requester = this.createBelongsToAccessorFor(
       'requester',
       requesterGetter,

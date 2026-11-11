@@ -342,7 +342,7 @@ describe('Issue-context browser reproduction (e2e)', {timeout: 30000}, () => {
         status: verdict,
         result: {
           verdict,
-          promptVersion: 'issue-reproduction-v2',
+          promptVersion: 'issue-reproduction-v3',
           reproduction: {steps: [{number: 1, action: 'Click Open candy gate'}]},
         },
       });

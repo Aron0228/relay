@@ -3,3 +3,4 @@ export * from './run-event.model';
 export * from './run-result.model';
 export * from './task.model';
 export * from './stage-request.model';
+export * from './pr-context.model';

@@ -129,7 +129,9 @@ void main() {
       final api = WorkspaceApi(
         sessions,
         client: MockClient((request) async {
-          final data = request.url.path.endsWith('/members')
+          final data = request.url.path.endsWith('/github')
+              ? {'repositories': []}
+              : request.url.path.endsWith('/members')
               ? [
                   {
                     'userId': 'finn',

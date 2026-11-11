@@ -127,3 +127,22 @@
     padding: 15px 12px;
   }
 }
+
+.source-content {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  max-height: 360px;
+  overflow: auto;
+  padding: 12px;
+  background: var(--color-background);
+  border-radius: 8px;
+}
+
+.tab-panel code,
+.tab-panel .muted {
+  overflow-wrap: anywhere;
+}
+.context-content h3 {
+  margin-top: 24px;
+}

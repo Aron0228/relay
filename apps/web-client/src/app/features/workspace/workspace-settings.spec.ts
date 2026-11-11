@@ -69,6 +69,7 @@ it('groups settings into accessible tabs and preserves a draft when switching', 
     (button) => button.textContent?.trim() === 'New environment',
   )!;
   create.click();
+  http.expectOne('/api/workspaces/candy/github').flush({ repositories: [] });
   fixture.detectChanges();
   expect(page.querySelector('app-workspace-side-panel input[name=baseUrl]')).not.toBeNull();
   expect(page.querySelector('app-workspace-side-panel')!.textContent).not.toContain('Cancel');

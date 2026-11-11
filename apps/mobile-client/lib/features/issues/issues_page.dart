@@ -8,8 +8,13 @@ import 'issue_detail.dart';
 import 'issue_status.dart';
 
 class IssuesPage extends StatefulWidget {
-  const IssuesPage({super.key, required this.sessions});
+  const IssuesPage({
+    super.key,
+    required this.sessions,
+    this.pullRequests = false,
+  });
   final SessionService sessions;
+  final bool pullRequests;
 
   @override
   State<IssuesPage> createState() => _IssuesPageState();
@@ -56,7 +61,11 @@ class _IssuesPageState extends State<IssuesPage> {
         },
       ).query;
       final page =
-          await _api.request('GET', '/issues?$query') as Map<String, dynamic>;
+          await _api.request(
+                'GET',
+                '/${widget.pullRequests ? 'pull-requests' : 'issues'}?$query',
+              )
+              as Map<String, dynamic>;
       if (!mounted || revision != _revision) return;
 
       final items = (page['items'] as List).cast<Map<String, dynamic>>();
@@ -89,7 +98,11 @@ class _IssuesPageState extends State<IssuesPage> {
     _timer?.cancel();
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => IssueDetailPage(sessions: widget.sessions, id: id),
+        builder: (_) => IssueDetailPage(
+          sessions: widget.sessions,
+          id: id,
+          pullRequests: widget.pullRequests,
+        ),
       ),
     );
     if (mounted) await _load();
@@ -105,8 +118,10 @@ class _IssuesPageState extends State<IssuesPage> {
             Expanded(
               child: TextField(
                 controller: _search,
-                decoration: const InputDecoration(
-                  hintText: 'Search issues…',
+                decoration: InputDecoration(
+                  hintText: widget.pullRequests
+                      ? 'Search pull requests…'
+                      : 'Search issues…',
                   prefixIcon: Icon(LucideIcons.search, size: 18),
                 ),
                 onChanged: (_) {
@@ -167,9 +182,7 @@ class _IssuesPageState extends State<IssuesPage> {
                 Padding(
                   padding: const EdgeInsets.all(28),
                   child: Text(
-                    _loading
-                        ? 'Loading issues…'
-                        : 'No issue investigations found.',
+                    _loading ? 'Loading issues…' : 'No investigations found.',
                     style: const TextStyle(color: RelayTokens.muted),
                   ),
                 ),

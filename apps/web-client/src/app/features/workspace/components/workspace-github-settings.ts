@@ -1,3 +1,4 @@
+import { SelectField } from '../../../shared/select-field';
 import { Component, HostListener, inject, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -14,7 +15,7 @@ interface Repository {
   githubId: number;
   installationId: string;
   fullName: string;
-  defaultEnvironmentId: string;
+  defaultEnvironmentId?: string | null;
 }
 interface AvailableInstallation {
   githubId: number;
@@ -31,7 +32,7 @@ interface Connection {
 
 @Component({
   selector: 'app-workspace-github-settings',
-  imports: [FormsModule, WorkspaceSidePanel],
+  imports: [SelectField, FormsModule, WorkspaceSidePanel],
   styleUrl: './workspace-manager.css',
   styles: `
     :host {
@@ -105,7 +106,7 @@ interface Connection {
       </div>
       @if (workspaces.admin()) {
         <button
-          [disabled]="busy() || !connection().installations.length || !environments().length"
+          [disabled]="busy() || !connection().installations.length"
           (click)="openRepository()"
         >
           Add repository
@@ -113,7 +114,7 @@ interface Connection {
       }
     </div>
     @if (workspaces.admin() && !environments().length) {
-      <p>Create an environment in the Environments tab first.</p>
+      <p>Connect a repository, then configure its environments in the Environments tab.</p>
     }
     <div class="item-list">
       @for (repository of connection().repositories; track repository.id) {
@@ -157,14 +158,16 @@ interface Connection {
               owners can connect their installations.
             </p>
             <label
-              >Installation<select name="installation" [(ngModel)]="githubInstallationId">
-                <option [ngValue]="0" disabled>Choose installation</option>
-                @for (item of availableInstallations(); track item.githubId) {
-                  <option [ngValue]="item.githubId">
-                    {{ item.accountLogin }} (#{{ item.githubId }})
-                  </option>
-                }
-              </select></label
+              >Installation<app-select-field
+                ><select name="installation" [(ngModel)]="githubInstallationId">
+                  <option [ngValue]="0" disabled>Choose installation</option>
+                  @for (item of availableInstallations(); track item.githubId) {
+                    <option [ngValue]="item.githubId">
+                      {{ item.accountLogin }} (#{{ item.githubId }})
+                    </option>
+                  }
+                </select></app-select-field
+              ></label
             >
             @if (!busy() && !availableInstallations().length) {
               <p>No installation you can manage was found.</p>
@@ -179,38 +182,41 @@ interface Connection {
         } @else {
           <form (ngSubmit)="save()">
             <label
-              >Installation<select
-                name="installationId"
-                [(ngModel)]="installationId"
-                (ngModelChange)="loadRepositories()"
-              >
-                <option value="" disabled>Choose installation</option>
-                @for (item of connection().installations; track item.id) {
-                  <option [value]="item.id">{{ item.accountLogin }}</option>
-                }
-              </select></label
+              >Installation<app-select-field
+                ><select
+                  name="installationId"
+                  [(ngModel)]="installationId"
+                  (ngModelChange)="loadRepositories()"
+                >
+                  <option value="" disabled>Choose installation</option>
+                  @for (item of connection().installations; track item.id) {
+                    <option [value]="item.id">{{ item.accountLogin }}</option>
+                  }
+                </select></app-select-field
+              ></label
             >
             <label
-              >Repository<select name="repository" [(ngModel)]="githubRepositoryId">
-                <option [ngValue]="0" disabled>Choose repository</option>
-                @for (item of availableRepositories(); track item.githubId) {
-                  <option [ngValue]="item.githubId">{{ item.fullName }}</option>
-                }
-              </select></label
+              >Repository<app-select-field
+                ><select name="repository" [(ngModel)]="githubRepositoryId">
+                  <option [ngValue]="0" disabled>Choose repository</option>
+                  @for (item of availableRepositories(); track item.githubId) {
+                    <option [ngValue]="item.githubId">{{ item.fullName }}</option>
+                  }
+                </select></app-select-field
+              ></label
             >
             <label
-              >Approved environment<select name="environment" [(ngModel)]="environmentId">
-                <option value="" disabled>Choose environment</option>
-                @for (item of environments(); track item.id) {
-                  <option [value]="item.id">{{ item.name }} — {{ item.baseUrl }}</option>
-                }
-              </select></label
+              >Default test environment<app-select-field
+                ><select name="environment" [(ngModel)]="environmentId">
+                  <option value="">No default environment</option>
+                  @for (item of defaultEnvironments(); track item.id) {
+                    <option [value]="item.id">{{ item.name }} — {{ item.baseUrl }}</option>
+                  }
+                </select></app-select-field
+              ></label
             >
             <div class="form-actions">
-              <button
-                class="primary"
-                [disabled]="busy() || !installationId || !githubRepositoryId || !environmentId"
-              >
+              <button class="primary" [disabled]="busy() || !installationId || !githubRepositoryId">
                 Save repository
               </button>
             </div>
@@ -234,6 +240,14 @@ export class WorkspaceGithubSettings implements OnInit {
   protected installationId = '';
   protected githubRepositoryId = 0;
   protected environmentId = '';
+  protected editingRepositoryId = '';
+
+  protected defaultEnvironments() {
+    return this.environments().filter(
+      (item) =>
+        item.baseUrl && (!item.repositoryId || item.repositoryId === this.editingRepositoryId),
+    );
+  }
 
   ngOnInit() {
     void this.perform(() => this.load());
@@ -318,8 +332,11 @@ export class WorkspaceGithubSettings implements OnInit {
   protected close() {
     if (!this.busy()) this.panel.set(null);
   }
-  protected environmentName(id: string) {
-    return this.environments().find((item) => item.id === id)?.name ?? 'Environment unavailable';
+  protected environmentName(id?: string | null) {
+    return (
+      this.environments().find((item) => item.id === id)?.name ??
+      'No default test environment configured'
+    );
   }
   protected openConnection() {
     this.githubInstallationId = 0;
@@ -347,6 +364,7 @@ export class WorkspaceGithubSettings implements OnInit {
   }
 
   protected openRepository(repository?: Repository) {
+    this.editingRepositoryId = repository?.id ?? '';
     this.installationId =
       repository?.installationId ?? this.connection().installations[0]?.id ?? '';
     this.githubRepositoryId = repository?.githubId ?? 0;
@@ -374,7 +392,7 @@ export class WorkspaceGithubSettings implements OnInit {
       await this.workspaces.request('POST', `${this.path()}/repositories`, {
         installationId: this.installationId,
         githubId: this.githubRepositoryId,
-        environmentId: this.environmentId,
+        environmentId: this.environmentId || null,
       });
       await this.load();
       this.panel.set(null);

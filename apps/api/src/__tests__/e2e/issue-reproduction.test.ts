@@ -169,6 +169,12 @@ describe('GitHub comment issue reproduction (e2e)', () => {
       archived: false,
       disabled: false,
     });
+    vi.spyOn(github, 'findTaskComment').mockResolvedValue(undefined);
+    vi.spyOn(github, 'createComment').mockResolvedValue({
+      githubId: 7654321,
+      url: 'https://github.com/ooo/candy-shop/issues/173#issuecomment-7654321',
+    });
+
     vi.spyOn(github, 'getIssue').mockResolvedValue({
       githubId: issueGithubId,
       number: 173,
@@ -263,7 +269,7 @@ describe('GitHub comment issue reproduction (e2e)', () => {
     'relay run\nthen do more',
     '`relay run`',
     '',
-  ])('ignores non-exact command %j', async text => {
+  ])('does not start an investigation for non-exact command %j', async text => {
     const body = payload();
     body.comment.body = text;
     await send(body).expect(200);

@@ -1,3 +1,4 @@
+import '../../widgets/app_dropdown.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -294,8 +295,7 @@ class _WorkspaceGithubSettingsState extends State<WorkspaceGithubSettings>
         'Choose the environment used to test each repository.',
         widget.admin
             ? OutlinedButton(
-                onPressed:
-                    _busy || _installations.isEmpty || _environments.isEmpty
+                onPressed: _busy || _installations.isEmpty
                     ? null
                     : () => _repository(),
                 child: const Text('Add repository'),
@@ -303,7 +303,9 @@ class _WorkspaceGithubSettingsState extends State<WorkspaceGithubSettings>
             : null,
       ),
       if (widget.admin && _environments.isEmpty)
-        const Text('Create an environment in the Environments tab first.'),
+        const Text(
+          'Connect a repository, then configure its environments in the Environments tab.',
+        ),
       if (_repositories.isEmpty) const Text('No repository configured.'),
       for (final repository in _repositories)
         ListTile(
@@ -410,7 +412,9 @@ class _RepositoryFormState extends State<_RepositoryForm> {
       await widget.api.request('POST', '${widget.path}/repositories', {
         'installationId': _installationId,
         'githubId': _repositoryId,
-        'environmentId': _environmentId,
+        'environmentId': _environmentId?.isEmpty == true
+            ? null
+            : _environmentId,
       });
       if (mounted) Navigator.pop(context, true);
     } catch (error) {
@@ -431,7 +435,7 @@ class _RepositoryFormState extends State<_RepositoryForm> {
       if (_busy) const LinearProgressIndicator(),
       if (_error != null)
         Text(_error!, style: const TextStyle(color: RelayTokens.error)),
-      DropdownButtonFormField<String>(
+      AppDropdown<String>(
         initialValue: _installationId,
         decoration: const InputDecoration(labelText: 'Installation'),
         items: [
@@ -452,7 +456,7 @@ class _RepositoryFormState extends State<_RepositoryForm> {
               },
       ),
       const SizedBox(height: 24),
-      DropdownButtonFormField<int>(
+      AppDropdown<int>(
         key: ValueKey('$_installationId-${_repositories.length}'),
         initialValue:
             _repositories.any((item) => item['githubId'] == _repositoryId)
@@ -475,15 +479,26 @@ class _RepositoryFormState extends State<_RepositoryForm> {
             : (value) => setState(() => _repositoryId = value),
       ),
       const SizedBox(height: 24),
-      DropdownButtonFormField<String>(
+      AppDropdown<String>(
         initialValue:
             widget.environments.any((item) => item['id'] == _environmentId)
             ? _environmentId
             : null,
         isExpanded: true,
-        decoration: const InputDecoration(labelText: 'Approved environment'),
+        decoration: const InputDecoration(
+          labelText: 'Default test environment',
+        ),
         items: [
-          for (final item in widget.environments)
+          const DropdownMenuItem<String>(
+            value: '',
+            child: Text('No default environment'),
+          ),
+          for (final item in widget.environments.where(
+            (item) =>
+                item['baseUrl'] != null &&
+                (item['repositoryId'] == null ||
+                    item['repositoryId'] == widget.repository?['id']),
+          ))
             DropdownMenuItem(
               value: item['id'] as String,
               child: Text(
@@ -500,9 +515,7 @@ class _RepositoryFormState extends State<_RepositoryForm> {
       Align(
         alignment: Alignment.centerRight,
         child: FilledButton(
-          onPressed: _busy || _repositoryId == null || _environmentId == null
-              ? null
-              : _save,
+          onPressed: _busy || _repositoryId == null ? null : _save,
           child: const Text('Save repository'),
         ),
       ),

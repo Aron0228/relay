@@ -3,3 +3,4 @@ export * from './run-event.repository';
 export * from './run-result.repository';
 export * from './task.repository';
 export * from './stage-request.repository';
+export * from './pr-context.repository';

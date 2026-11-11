@@ -36,7 +36,14 @@ export interface RunEvent {
 
 export interface RunResult {
   result: {
-    verdict: 'passed' | 'failed' | 'inconclusive' | 'reproduced' | 'not_reproduced';
+    verdict:
+      | 'passed'
+      | 'failed'
+      | 'inconclusive'
+      | 'reproduced'
+      | 'not_reproduced'
+      | 'fixed'
+      | 'not_fixed';
     summary: string;
     steps: string[];
     observations: string[];

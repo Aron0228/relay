@@ -11,9 +11,15 @@ import '../execution/run_status.dart';
 import 'issue_status.dart';
 
 class IssueDetailPage extends StatefulWidget {
-  const IssueDetailPage({super.key, required this.sessions, required this.id});
+  const IssueDetailPage({
+    super.key,
+    required this.sessions,
+    required this.id,
+    this.pullRequests = false,
+  });
   final SessionService sessions;
   final String id;
+  final bool pullRequests;
 
   @override
   State<IssueDetailPage> createState() => _IssueDetailPageState();
@@ -51,7 +57,10 @@ class _IssueDetailPageState extends State<IssueDetailPage> {
           ? ''
           : '?${Uri(queryParameters: {'taskId': _taskId}).query}';
       final issue =
-          await _api.request('GET', '/issues/${widget.id}$query')
+          await _api.request(
+                'GET',
+                '/${widget.pullRequests ? 'pull-requests' : 'issues'}/${widget.id}$query',
+              )
               as Map<String, dynamic>;
       if (!mounted || revision != _revision) return;
       setState(() {
@@ -186,6 +195,94 @@ class _IssueDetailPageState extends State<IssueDetailPage> {
     );
   }
 
+  Widget _contextContent(Map<String, dynamic>? contextData) {
+    if (contextData == null) {
+      return const Text('Waiting for context collection.');
+    }
+
+    final data = contextData['data'] as Map<String, dynamic>?;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text('Context: ${contextData['status']}'),
+        SelectableText('Captured head: ${contextData['headSha']}'),
+        if (contextData['model'] != null)
+          Text('${contextData['model']} · ${contextData['promptVersion']}'),
+        if (contextData['error'] != null)
+          Text(
+            contextData['error'] as String,
+            style: const TextStyle(color: RelayTokens.error),
+          ),
+        if (data != null) ...[
+          _section('Test objective', Text(data['summary'] as String)),
+          for (final field in [
+            ('affectedSurfaces', 'Affected surfaces'),
+            ('preconditions', 'Preconditions'),
+            ('steps', 'Planned checks'),
+            ('uncertainties', 'Uncertainties'),
+          ])
+            _section(
+              field.$2,
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (final value in data[field.$1] as List)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Text(value.toString()),
+                    ),
+                  if ((data[field.$1] as List).isEmpty)
+                    const Text('None reported.'),
+                ],
+              ),
+            ),
+          _section(
+            'Expected behavior',
+            Text(data['expectedBehavior'] as String),
+          ),
+        ],
+        _section(
+          'Captured sources',
+          Column(
+            children: [
+              for (final source in contextData['sources'] as List)
+                ExpansionTile(
+                  title: Text(
+                    '${source['kind']} · ${source['id']}${source['truncated'] == true ? ' · Truncated' : ''}',
+                  ),
+                  children: [
+                    TextButton(
+                      onPressed: () async {
+                        final uri = Uri.parse(source['url'] as String);
+                        if (['https', 'http'].contains(uri.scheme)) {
+                          await launchUrl(
+                            uri,
+                            mode: LaunchMode.externalApplication,
+                          );
+                        }
+                      },
+                      child: const Text('View source on GitHub'),
+                    ),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 320),
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.all(12),
+                        child: SelectableText(
+                          source['content'] as String,
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final issue = _issue;
@@ -197,7 +294,11 @@ class _IssueDetailPageState extends State<IssueDetailPage> {
     return Scaffold(
       backgroundColor: RelayTokens.content,
       appBar: AppBar(
-        title: Text(issue == null ? 'Issue' : 'Issue #${issue['number']}'),
+        title: Text(
+          issue == null
+              ? 'Issue'
+              : '${widget.pullRequests ? 'Pull request' : 'Issue'} #${issue['number']}',
+        ),
         backgroundColor: RelayTokens.content,
       ),
       body: SafeArea(
@@ -270,7 +371,11 @@ class _IssueDetailPageState extends State<IssueDetailPage> {
                 const SizedBox(height: 20),
                 Row(
                   children: [
-                    for (final tab in ['Overview', 'Runs'])
+                    for (final tab in [
+                      'Overview',
+                      if (widget.pullRequests) 'Context',
+                      'Runs',
+                    ])
                       Padding(
                         padding: const EdgeInsets.only(right: 8),
                         child: OutlinedButton(
@@ -300,6 +405,12 @@ class _IssueDetailPageState extends State<IssueDetailPage> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       if (_tab == 'Overview') ...[
+                        if (widget.pullRequests) ...[
+                          SelectableText('Environment: ${issue['targetUrl']}'),
+                          const SizedBox(height: 8),
+                          SelectableText('Captured head: ${issue['headSha']}'),
+                          const SizedBox(height: 20),
+                        ],
                         Text(
                           issue['title'] as String,
                           style: const TextStyle(
@@ -380,6 +491,10 @@ class _IssueDetailPageState extends State<IssueDetailPage> {
                             'Actual behavior',
                             Text(result!['actualBehavior'].toString()),
                           ),
+                      ] else if (_tab == 'Context') ...[
+                        _contextContent(
+                          issue['context'] as Map<String, dynamic>?,
+                        ),
                       ] else ...[
                         for (final group in issue['runGroups'] as List)
                           _runGroup(group as Map<String, dynamic>),

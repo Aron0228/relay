@@ -6,6 +6,7 @@ import {describeBrowserAction, isBareBrowserAction} from '../ai/browser-action';
 import {Task} from '../models';
 import {
   GithubIssueRepository,
+  GithubPullRequestRepository,
   RunEventRepository,
   RunResultRepository,
   TaskRepository,
@@ -20,6 +21,17 @@ import {
 
 export const GITHUB_FEEDBACK_SERVICE_BINDING_KEY =
   'services.GithubFeedbackService';
+
+function feedbackDue(maximum: string): string {
+  const retry = `((feedback_status IN ('pending', 'failed') AND feedback_attempts < ${maximum}
+    AND (feedback_next_attempt_at IS NULL OR feedback_next_attempt_at <= now()))
+    OR (feedback_status = 'sending' AND feedback_lease_expires_at <= now()))`;
+
+  return `((ended_at IS NULL AND feedback_phase = 'progress' AND ${retry})
+    OR (ended_at IS NOT NULL AND (
+      (feedback_phase = 'progress' AND (feedback_status <> 'sending' OR feedback_lease_expires_at <= now()))
+      OR (feedback_phase = 'final' AND ${retry}))))`;
+}
 
 @lifeCycleObserver('github-feedback', {scope: BindingScope.SINGLETON})
 export class GithubFeedbackService {
@@ -41,6 +53,8 @@ export class GithubFeedbackService {
     private connections: GithubConnectionService,
     @inject(WORKER_SERVICE_OPTIONS_BINDING_KEY, {optional: true})
     private options: WorkerServiceOptions = {},
+    @repository(GithubPullRequestRepository)
+    private pullRequests?: GithubPullRequestRepository,
   ) {}
 
   start(): void {
@@ -70,11 +84,8 @@ export class GithubFeedbackService {
 
   private async deliver(): Promise<void> {
     const due = (await this.tasks.execute(
-      `SELECT id FROM execution.task WHERE ended_at IS NOT NULL
-       AND ((feedback_status IN ('pending', 'failed') AND feedback_attempts < $1
-         AND (feedback_next_attempt_at IS NULL OR feedback_next_attempt_at <= now()))
-         OR (feedback_status = 'sending' AND feedback_lease_expires_at <= now()))
-       ORDER BY ended_at, id LIMIT 20`,
+      `SELECT id FROM execution.task WHERE ${feedbackDue('$1')}
+       ORDER BY created_at, id LIMIT 20`,
       [this.maxAttempts],
     )) as {id: string}[];
 
@@ -88,11 +99,10 @@ export class GithubFeedbackService {
     const token = randomUUID();
     const claimed = (await this.tasks.execute(
       `WITH claimed AS (UPDATE execution.task SET feedback_status = 'sending', feedback_lease_token = $2,
-       feedback_lease_expires_at = now() + interval '5 minutes', feedback_attempts = feedback_attempts + 1
-       WHERE id = $1 AND ended_at IS NOT NULL AND
-       ((feedback_status IN ('pending', 'failed') AND feedback_attempts < $3
-          AND (feedback_next_attempt_at IS NULL OR feedback_next_attempt_at <= now())) OR
-        (feedback_status = 'sending' AND feedback_lease_expires_at <= now())) RETURNING id)
+       feedback_lease_expires_at = now() + interval '5 minutes',
+       feedback_attempts = CASE WHEN feedback_phase = 'progress' AND ended_at IS NOT NULL THEN 1 ELSE feedback_attempts + 1 END,
+       feedback_phase = CASE WHEN ended_at IS NULL THEN 'progress' ELSE 'final' END
+       WHERE id = $1 AND ${feedbackDue('$3')} RETURNING id)
        SELECT id FROM claimed`,
       [id, token, this.maxAttempts],
     )) as {id: string}[];
@@ -108,7 +118,10 @@ export class GithubFeedbackService {
         task.workspaceId,
         task.environmentId,
       );
-      const issue = await this.issues.findById(task.issueId);
+      const issue =
+        task.kind === 'pr_verification'
+          ? await this.pullRequests!.findById(task.pullRequestId!)
+          : await this.issues.findById(task.issueId!);
       const installationId = Number(target.installation.githubId);
       const repositoryId = Number(target.repository.githubId);
       let commentId = await this.github.findTaskComment(
@@ -118,26 +131,49 @@ export class GithubFeedbackService {
         marker,
       );
 
-      if (!commentId) {
-        if (task.feedbackAttempts > this.maxAttempts)
+      if (!commentId || task.feedbackPhase === 'final') {
+        if (!commentId && task.feedbackAttempts > this.maxAttempts)
           throw new Error('Feedback delivery attempt limit reached');
+
         const owned = (await this.tasks.execute(
           `WITH renewed AS (UPDATE execution.task SET feedback_lease_expires_at = now() + interval '5 minutes'
            WHERE id = $1 AND feedback_lease_token = $2 AND feedback_lease_expires_at > now() RETURNING id) SELECT id FROM renewed`,
           [id, token],
         )) as {id: string}[];
+
         if (!owned.length || this.stopped) return;
 
-        const body = await this.comment(task, marker);
-        attemptedPost = true;
-        commentId = (
-          await this.github.createComment(
+        const body =
+          task.feedbackPhase === 'progress'
+            ? this.progressComment(task, marker)
+            : await this.comment(task, marker);
+
+        if (commentId) {
+          await this.github.updateComment(
             installationId,
             repositoryId,
-            issue.number,
+            commentId,
             body,
-          )
-        ).githubId;
+          );
+        } else {
+          attemptedPost = true;
+          commentId = (
+            await this.github.createComment(
+              installationId,
+              repositoryId,
+              issue.number,
+              body,
+            )
+          ).githubId;
+        }
+      }
+
+      if (task.kind === 'pr_verification') {
+        console.info('[PR verification] GitHub feedback delivered', {
+          taskId: task.id,
+          commentId,
+          phase: task.feedbackPhase,
+        });
       }
 
       await this.tasks.updateAll(
@@ -153,6 +189,14 @@ export class GithubFeedbackService {
         {id, feedbackLeaseToken: token},
       );
     } catch (error) {
+      if (task.kind === 'pr_verification') {
+        console.info('[PR verification] GitHub feedback failed', {
+          taskId: task.id,
+          attempt: task.feedbackAttempts,
+          error: (error as Error).message,
+        });
+      }
+
       const status = (error as {statusCode?: number}).statusCode;
       const permanent =
         status !== undefined && [400, 401, 403, 404, 409, 422].includes(status);
@@ -188,7 +232,18 @@ export class GithubFeedbackService {
     }
   }
 
+  private progressComment(task: Task, marker: string): string {
+    return [
+      marker,
+      '## Investigation started',
+      'The request has been accepted. This comment will be updated when the investigation finishes.',
+      `Requested from [this comment](${task.sourceCommentUrl}).`,
+    ].join('\n\n');
+  }
+
   private async comment(task: Task, marker: string): Promise<string> {
+    if (task.kind === 'pr_verification') return this.prComment(task, marker);
+
     const state: IssuePipelineState = task.result ?? {};
     const initial = state.reproductionRunId
       ? await this.results.findOne({where: {runId: state.reproductionRunId}})
@@ -288,6 +343,60 @@ export class GithubFeedbackService {
       ),
       `[View both runs, their observations and recordings](${url.toString()})`,
       'Sign in with a workspace member account to view the recordings.',
+    ]
+      .join('\n\n')
+      .slice(0, 60000);
+  }
+  private prComment(task: Task, marker: string): string {
+    const result = task.result as
+      | {
+          summary?: string;
+          expectedBehavior?: string;
+          actualBehavior?: string;
+          steps?: {action: string}[];
+        }
+      | undefined;
+    const origin =
+      process.env.PUBLIC_WEB_URL ??
+      new URL(
+        process.env.OAUTH_WEB_REDIRECT_URI ??
+          'http://localhost:4200/auth/callback',
+      ).origin;
+    const url = new URL(`/pull-requests/${task.pullRequestId}`, origin);
+    if (!['http:', 'https:'].includes(url.protocol))
+      throw new Error('PUBLIC_WEB_URL must use HTTP or HTTPS');
+    url.searchParams.set('workspaceId', task.workspaceId);
+    url.searchParams.set('taskId', task.id);
+    const plain = (value: string) =>
+      value
+        .replace(/[\\`*_[\]<>]/g, '\\$&')
+        .replace(/@/g, '@\u200b')
+        .slice(0, 4000);
+    const label =
+      task.outcome === 'fixed'
+        ? 'Fix verified'
+        : task.outcome === 'not_fixed'
+          ? 'Issue still occurs'
+          : 'Fix verification inconclusive';
+
+    return [
+      marker,
+      `## ${label}`,
+      plain(result?.summary ?? 'No conclusive browser result was recorded.'),
+      `Captured PR head: \`${task.headSha}\``,
+      `Tested environment: ${plain(task.targetUrl!)}`,
+      'The deployed version was supplied by the requester; its commit was not verified.',
+      '### Checked steps',
+      ...(result?.steps?.map(
+        (step, index) =>
+          `${index + 1}. ${plain(step.action).replace(/\n/g, ' ')}`,
+      ) ?? ['No complete scenario was recorded.']),
+      '### Expected behavior',
+      plain(result?.expectedBehavior ?? 'Not established.'),
+      '### Observed behavior',
+      plain(result?.actualBehavior ?? 'No observation was recorded.'),
+      `[View context, run and protected recording](${url.toString()})`,
+      'Sign in with a workspace member account to view the recording.',
     ]
       .join('\n\n')
       .slice(0, 60000);

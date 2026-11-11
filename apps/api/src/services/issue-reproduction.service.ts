@@ -1,3 +1,4 @@
+import {GithubCommandReplyService} from './github-command-reply.service';
 import {BindingScope, inject, lifeCycleObserver, service} from '@loopback/core';
 import {IsolationLevel, repository} from '@loopback/repository';
 import {HttpErrors} from '@loopback/rest';
@@ -11,6 +12,7 @@ import {
   Task,
   TASK_STATUS,
   WEBHOOK_STATUS,
+  WebhookDelivery,
 } from '../models';
 import {
   GithubInstallationRepository,
@@ -27,6 +29,10 @@ import {GithubAppService} from './github-app.service';
 import {GithubConnectionService} from './github-connection.service';
 import {WorkspaceService} from './workspace.service';
 import {WorkerService} from './worker.service';
+import {
+  PrVerificationService,
+  prCommandSchema,
+} from './pr-verification.service';
 
 export const ISSUE_REPRODUCTION_SERVICE_BINDING_KEY =
   'services.IssueReproductionService';
@@ -85,6 +91,10 @@ export class IssueReproductionService {
     @service(WorkerService) private workers: WorkerService,
     @inject(ISSUE_REPRODUCTION_OPTIONS_BINDING_KEY, {optional: true})
     private options: IssueReproductionOptions = {},
+    @service(PrVerificationService)
+    private pullRequests?: PrVerificationService,
+    @service(GithubCommandReplyService)
+    private commandReplies?: GithubCommandReplyService,
   ) {}
 
   async start(): Promise<void> {
@@ -134,13 +144,63 @@ export class IssueReproductionService {
 
     if (!delivery) return;
 
+    const pr = prCommandSchema.safeParse(delivery.payload);
+    if (pr.success && pr.data.sender.id === pr.data.comment.user.id) {
+      console.info('[PR verification] Command received', {
+        deliveryId,
+        commentId: pr.data.comment.id,
+        pullRequestNumber: pr.data.issue.number,
+      });
+
+      try {
+        if (!this.pullRequests)
+          throw new Error('PR verification service is unavailable');
+        const task = await this.pullRequests.prepare(pr.data);
+        await this.deliveries.settle(
+          delivery,
+          WEBHOOK_STATUS.Processed,
+          undefined,
+          task.id,
+        );
+      } catch (error) {
+        const status = (error as {statusCode?: number}).statusCode;
+        const rejected =
+          status !== undefined && [400, 403, 404, 409, 422].includes(status);
+        if (rejected)
+          await this.replyToCommand(delivery, (error as Error).message);
+
+        await this.deliveries.settle(
+          delivery,
+          rejected ? WEBHOOK_STATUS.Rejected : WEBHOOK_STATUS.Failed,
+          rejected
+            ? (error as Error).message
+            : 'PR verification could not be prepared; retry scheduled',
+        );
+        console.info('[PR verification] Command preparation failed', {
+          deliveryId,
+          rejected,
+          error: (error as Error).message,
+        });
+
+        if (!rejected) throw error;
+      }
+      return;
+    }
+
     const parsed = command.safeParse(delivery.payload);
 
     if (
       !parsed.success ||
       parsed.data.sender.id !== parsed.data.comment.user.id
     ) {
-      await this.deliveries.settle(delivery, WEBHOOK_STATUS.Ignored);
+      const replied = await this.replyToCommand(delivery);
+      await this.deliveries.settle(
+        delivery,
+        replied ? WEBHOOK_STATUS.Rejected : WEBHOOK_STATUS.Ignored,
+        replied
+          ? 'Unsupported relay command; usage instructions sent'
+          : undefined,
+      );
       return;
     }
 
@@ -161,7 +221,11 @@ export class IssueReproductionService {
       const rejected =
         status !== undefined && [400, 403, 404, 409, 422].includes(status);
 
-      if (rejected) await this.cancelPending(parsed.data.comment.id);
+      if (rejected) {
+        await this.cancelPending(parsed.data.comment.id);
+        if (!taskId)
+          await this.replyToCommand(delivery, (error as Error).message);
+      }
 
       await this.deliveries.settle(
         delivery,
@@ -176,6 +240,24 @@ export class IssueReproductionService {
         throw new HttpErrors.ServiceUnavailable(
           'Issue reproduction is stored and will be retried',
         );
+    }
+  }
+
+  private async replyToCommand(
+    delivery: WebhookDelivery,
+    reason?: string,
+  ): Promise<boolean> {
+    if (!this.commandReplies) return false;
+
+    try {
+      return await this.commandReplies.reply(delivery.payload, reason);
+    } catch (error) {
+      await this.deliveries.settle(
+        delivery,
+        WEBHOOK_STATUS.Failed,
+        'GitHub command reply could not be delivered; retry scheduled',
+      );
+      throw error;
     }
   }
 
@@ -328,6 +410,7 @@ export class IssueReproductionService {
           repositoryId: linkedRepository.id,
           issueId: issue.id,
           environmentId: target.environment.id,
+          targetUrl: target.targetUrl,
           issueTitle: source.title,
           issueBody: source.body,
           sourceCommentId: payload.comment.id,

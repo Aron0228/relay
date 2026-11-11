@@ -21,10 +21,17 @@ export function reproductionInput(
   issue: Pick<GithubIssue, 'githubId' | 'number' | 'url'>,
   environment: Pick<Environment, 'id' | 'name' | 'baseUrl'>,
 ): AgentInput {
+  const baseUrl = environment.baseUrl;
+
+  if (!baseUrl)
+    throw new Error(
+      'Issue reproduction requires a concrete environment base URL',
+    );
+
   return {
     prompt:
       'Investigate whether the reported GitHub issue can be reproduced in the configured environment.',
-    targetUrl: environment.baseUrl,
+    targetUrl: baseUrl,
     reproduction: {
       issue: {
         id: String(issue.githubId),
@@ -36,7 +43,7 @@ export function reproductionInput(
       environment: {
         id: environment.id,
         name: environment.name,
-        baseUrl: environment.baseUrl,
+        baseUrl,
       },
       expectedBehavior: section(task.issueBody, [
         'expected behavior',

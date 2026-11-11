@@ -50,6 +50,7 @@ label {
   gap: 0;
 }
 input,
+textarea,
 button {
   box-sizing: border-box;
   font: inherit;
@@ -60,7 +61,8 @@ button {
   border-radius: 7px;
   padding: 10px 12px;
 }
-input {
+input,
+textarea {
   width: 100%;
   min-width: 0;
   background: var(--color-content);
@@ -259,4 +261,14 @@ app-workspace-side-panel form {
   .image-actions {
     flex-wrap: wrap;
   }
+}
+
+textarea {
+  resize: vertical;
+}
+.hint {
+  color: var(--color-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0;
 }

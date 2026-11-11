@@ -1,3 +1,4 @@
+import '../../widgets/app_dropdown.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -133,6 +134,10 @@ class _ExecutionPageState extends State<ExecutionPage> {
 
     if (!mounted) return;
 
+    environments = environments
+        .where((item) => (item['baseUrl'] as String?)?.isNotEmpty == true)
+        .toList();
+
     String? environmentId = environments.firstOrNull?['id'] as String?;
     final form = GlobalKey<FormState>();
     var busy = false;
@@ -160,7 +165,7 @@ class _ExecutionPageState extends State<ExecutionPage> {
                           ? 'Enter a test goal'
                           : null,
                     ),
-                    DropdownButtonFormField<String>(
+                    AppDropdown<String>(
                       initialValue: environmentId,
                       decoration: const InputDecoration(
                         labelText: 'Environment',

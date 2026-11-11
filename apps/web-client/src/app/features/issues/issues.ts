@@ -1,6 +1,6 @@
 import { Component, DestroyRef, effect, inject, signal, untracked } from '@angular/core';
 import { LucideDynamicIcon, LucideChevronRight } from '@lucide/angular';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { WorkspaceService } from '../workspace/workspace.service';
 import { IssueService } from './issue.service';
 import { IssueItem } from './issue.models';
@@ -13,8 +13,8 @@ import { IssueStatus } from './components/issue-status';
   template: `
     <div class="toolbar">
       <input
-        aria-label="Search issues"
-        placeholder="Search issues…"
+        [attr.aria-label]="resource === 'issues' ? 'Search issues' : 'Search pull requests'"
+        [placeholder]="resource === 'issues' ? 'Search issues…' : 'Search pull requests…'"
         [value]="search()"
         (input)="searchChanged($event)"
       />
@@ -25,7 +25,7 @@ import { IssueStatus } from './components/issue-status';
     }
     <section class="panel">
       @for (issue of items(); track issue.id) {
-        <a class="issue-row" [routerLink]="['/issues', issue.id]">
+        <a class="issue-row" [routerLink]="['/' + resource, issue.id]">
           <span class="muted">#{{ issue.number }}</span>
           <div class="row-info">
             <strong>{{ issue.title }}</strong
@@ -35,7 +35,7 @@ import { IssueStatus } from './components/issue-status';
           <svg [lucideIcon]="chevron" [size]="16" aria-hidden="true"></svg>
         </a>
       } @empty {
-        <p class="empty">{{ busy() ? 'Loading issues…' : 'No issue investigations found.' }}</p>
+        <p class="empty">{{ busy() ? 'Loading issues…' : 'No investigations found.' }}</p>
       }
     </section>
     @if (cursor()) {
@@ -46,6 +46,7 @@ import { IssueStatus } from './components/issue-status';
 export class IssuesPage {
   protected readonly chevron = LucideChevronRight;
   private readonly api = inject(IssueService);
+  protected readonly resource = inject(ActivatedRoute).snapshot.data['resource'] ?? 'issues';
   private readonly workspaces = inject(WorkspaceService);
   private readonly destroy = inject(DestroyRef);
   protected readonly items = signal<IssueItem[]>([]);
@@ -94,6 +95,7 @@ export class IssuesPage {
       const page = await this.api.list(
         this.search(),
         more ? (this.cursor() ?? undefined) : undefined,
+        this.resource,
       );
       if (this.closed || revision !== this.revision) return;
 

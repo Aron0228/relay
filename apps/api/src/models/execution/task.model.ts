@@ -3,7 +3,14 @@ import {Workspace} from '../auth/workspace.model';
 import {Environment} from '../auth/environment.model';
 import {GithubRepository} from '../github/repository.model';
 import {GithubIssue} from '../github/issue.model';
+import {GithubPullRequest} from '../github/pull-request.model';
 import {User} from '../auth/user.model';
+
+export const TASK_KIND = {
+  IssueReproduction: 'issue_reproduction',
+  PrVerification: 'pr_verification',
+} as const;
+export type TaskKind = (typeof TASK_KIND)[keyof typeof TASK_KIND];
 
 export const TASK_STATUS = {
   Pending: 'pending',
@@ -17,12 +24,21 @@ export const TASK_STATUS = {
 export type TaskStatus = (typeof TASK_STATUS)[keyof typeof TASK_STATUS];
 
 export const TASK_OUTCOME = {
+  Fixed: 'fixed',
+  NotFixed: 'not_fixed',
   Reproduced: 'reproduced',
   NotReproduced: 'not_reproduced',
   Inconclusive: 'inconclusive',
 } as const;
 
 export type TaskOutcome = (typeof TASK_OUTCOME)[keyof typeof TASK_OUTCOME];
+
+export const TASK_FEEDBACK_PHASE = {
+  Progress: 'progress',
+  Final: 'final',
+} as const;
+export type TaskFeedbackPhase =
+  (typeof TASK_FEEDBACK_PHASE)[keyof typeof TASK_FEEDBACK_PHASE];
 
 export const TASK_FEEDBACK_STATUS = {
   Pending: 'pending',
@@ -79,11 +95,45 @@ export class Task extends Entity {
     {name: 'issue'},
     {
       type: 'string',
-      required: true,
       postgresql: {columnName: 'issue_id', dataType: 'uuid'},
     },
   )
-  issueId!: string;
+  issueId?: string;
+
+  @property({
+    type: 'string',
+    default: 'issue_reproduction',
+    jsonSchema: {enum: Object.values(TASK_KIND)},
+  })
+  kind!: TaskKind;
+
+  @belongsTo(
+    () => GithubPullRequest,
+    {name: 'pullRequest'},
+    {
+      type: 'string',
+      postgresql: {columnName: 'pull_request_id', dataType: 'uuid'},
+    },
+  )
+  pullRequestId?: string;
+
+  @property({
+    type: 'string',
+    postgresql: {columnName: 'target_url', dataType: 'text'},
+  })
+  targetUrl?: string;
+
+  @property({
+    type: 'string',
+    postgresql: {columnName: 'base_sha', dataType: 'text'},
+  })
+  baseSha?: string;
+
+  @property({
+    type: 'string',
+    postgresql: {columnName: 'head_sha', dataType: 'text'},
+  })
+  headSha?: string;
 
   @belongsTo(
     () => User,
@@ -184,6 +234,14 @@ export class Task extends Entity {
     postgresql: {columnName: 'feedback_status', dataType: 'text'},
   })
   feedbackStatus!: TaskFeedbackStatus;
+
+  @property({
+    type: 'string',
+    default: TASK_FEEDBACK_PHASE.Progress,
+    jsonSchema: {enum: Object.values(TASK_FEEDBACK_PHASE)},
+    postgresql: {columnName: 'feedback_phase'},
+  })
+  feedbackPhase!: TaskFeedbackPhase;
 
   @property({
     type: 'number',

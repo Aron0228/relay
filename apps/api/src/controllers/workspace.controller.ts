@@ -25,7 +25,9 @@ const workspaceInput = z
 const environmentInput = z
   .object({
     name: z.string().trim().min(1).max(100),
-    baseUrl: z.string().url().max(2000),
+    baseUrl: z.union([z.url().max(2000), z.literal('')]).nullish(),
+    repositoryId: z.uuid().nullish(),
+    allowedOrigins: z.array(z.string().min(1).max(2000)).max(20).optional(),
   })
   .strict();
 
