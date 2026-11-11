@@ -5,6 +5,7 @@ export const WORKSPACE_SETTINGS_TAB = {
   Members: 'members',
   Environments: 'environments',
   Github: 'github',
+  Knowledge: 'knowledge',
 } as const;
 export type WorkspaceSettingsTab =
   (typeof WORKSPACE_SETTINGS_TAB)[keyof typeof WORKSPACE_SETTINGS_TAB];
@@ -83,6 +84,7 @@ export class WorkspaceSettingsTabs {
     { id: WORKSPACE_SETTINGS_TAB.Members, label: 'Members' },
     { id: WORKSPACE_SETTINGS_TAB.Environments, label: 'Environments' },
     { id: WORKSPACE_SETTINGS_TAB.Github, label: 'GitHub' },
+    { id: WORKSPACE_SETTINGS_TAB.Knowledge, label: 'Knowledge' },
   ];
 
   protected key(event: KeyboardEvent) {

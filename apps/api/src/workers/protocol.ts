@@ -1,4 +1,5 @@
 import {AgentInput, AgentResult} from '../ai/types';
+import {KnowledgeRequest} from '../ai/knowledge-tools';
 
 export const WORKER_SCRIPT = {
   ExampleTodo: 'example-todo',
@@ -15,12 +16,19 @@ export interface WorkerInput {
   actionDelayMs: number;
   agentInput?: AgentInput;
   leaseDeadline?: number;
+  knowledgeEnabled?: boolean;
 }
 
 export type WorkerCommand =
   | {type: 'start'; input: WorkerInput}
   | {type: 'heartbeat'; deadline: number}
-  | {type: 'cancel'};
+  | {type: 'cancel'}
+  | {
+      type: 'knowledge-result';
+      requestId: string;
+      value?: unknown;
+      error?: string;
+    };
 
 export interface WorkerResult {
   status: 'completed' | 'failed' | 'cancelled';
@@ -30,6 +38,7 @@ export interface WorkerResult {
 }
 
 export type WorkerMessage =
+  | {type: 'knowledge-request'; requestId: string; request: KnowledgeRequest}
   | {type: 'event'; event: string; payload: Record<string, unknown>}
   | {type: 'frame'; data: string}
   | {type: 'result'; result: WorkerResult};

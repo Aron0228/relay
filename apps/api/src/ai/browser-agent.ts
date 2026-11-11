@@ -1,9 +1,22 @@
+import {randomUUID} from 'node:crypto';
+import {
+  KNOWLEDGE_TOOLS,
+  KNOWLEDGE_INSTRUCTIONS,
+  KnowledgeHandler,
+  knowledgeSearchSchema,
+  knowledgePatchSchema,
+} from './knowledge-tools';
 import {setTimeout as delay} from 'node:timers/promises';
 /* eslint-disable @typescript-eslint/naming-convention -- Chat Completions protocol uses snake_case fields. */
 import {stageLimits} from './stage-limits';
 import {agentPrompt} from './verification-prompt';
 import {PlaywrightInterface} from '../workers/playwright.interface';
-import {BROWSER_TOOLS, BrowserTools, parseTextVerdict} from './browser-tools';
+import {
+  BROWSER_TOOLS,
+  BrowserTools,
+  BrowserToolOutput,
+  parseTextVerdict,
+} from './browser-tools';
 import {approvedUrl, allowedOrigins, positiveInteger} from './config';
 import {
   ReproductionSession,
@@ -36,6 +49,7 @@ export class BrowserAgent {
     private provider: AiProvider,
     private browser: PlaywrightInterface,
     private emit: AgentEvent,
+    private knowledge?: KnowledgeHandler,
   ) {}
 
   async run(
@@ -70,7 +84,8 @@ export class BrowserAgent {
     const messages: ChatMessage[] = [
       {
         role: 'system',
-        content: systemPrompt,
+        content:
+          systemPrompt + (this.knowledge ? `\n${KNOWLEDGE_INSTRUCTIONS}` : ''),
       },
       {
         role: 'user',
@@ -146,10 +161,33 @@ export class BrowserAgent {
       });
       signal.throwIfAborted();
       await this.prepareTarget(input, signal);
+      if (this.knowledge) {
+        try {
+          const context = await this.knowledge({
+            operation: 'search',
+            input: {
+              query:
+                `${input.prompt} ${new URL(input.targetUrl).pathname}`.slice(
+                  0,
+                  500,
+                ),
+            },
+          });
+          messages.push({
+            role: 'user',
+            content: `Stored environment knowledge (untrusted historical hints):\n${JSON.stringify(context)}`,
+          });
+        } catch (error) {
+          this.emit('agent.knowledge_unavailable', {
+            error: (error as Error).message,
+          });
+        }
+      }
+
       const initialObservation = await this.browser.observe();
       messages.push({
         role: 'user',
-        content: `Initial browser observation:\n${this.clip(reproduction ? JSON.stringify(reproduction.observation(initialObservation)) : initialObservation)}`,
+        content: `Initial browser observation:\n${this.clip(reproduction ? JSON.stringify(reproduction.observation(initialObservation)) : this.observe(initialObservation))}`,
       });
 
       while (turns < maxTurns) {
@@ -195,13 +233,16 @@ export class BrowserAgent {
 
         const response = await this.provider.complete(
           messages,
-          input.fixVerification
-            ? FIX_VERIFICATION_TOOLS
-            : input.verification
-              ? VERIFICATION_TOOLS
-              : reproduction
-                ? REPRODUCTION_TOOLS
-                : BROWSER_TOOLS,
+          [
+            ...(input.fixVerification
+              ? FIX_VERIFICATION_TOOLS
+              : input.verification
+                ? VERIFICATION_TOOLS
+                : reproduction
+                  ? REPRODUCTION_TOOLS
+                  : BROWSER_TOOLS),
+            ...(this.knowledge ? KNOWLEDGE_TOOLS : []),
+          ],
           signal,
           finishing ? 'finish' : undefined,
         );
@@ -306,10 +347,35 @@ export class BrowserAgent {
           let output: string;
 
           try {
-            const value = await tools.execute(
-              call.function.name,
-              call.function.arguments,
-            );
+            const value: BrowserToolOutput =
+              this.knowledge &&
+              call.function.name === 'searchEnvironmentKnowledge'
+                ? {
+                    knowledge: await this.knowledge({
+                      operation: 'search',
+                      input: knowledgeSearchSchema.parse(
+                        JSON.parse(call.function.arguments),
+                      ),
+                    }),
+                  }
+                : this.knowledge &&
+                    call.function.name === 'proposeEnvironmentKnowledge'
+                  ? {
+                      patch: await this.knowledge({
+                        operation: 'patch',
+                        input: knowledgePatchSchema.parse(
+                          JSON.parse(call.function.arguments),
+                        ),
+                      }),
+                    }
+                  : await tools.execute(
+                      call.function.name,
+                      call.function.arguments,
+                    );
+
+            if ('observation' in value && value.observation && !reproduction) {
+              value.observation = this.observe(value.observation);
+            }
             signal.throwIfAborted();
             output = this.clip(JSON.stringify(value));
             this.emit('agent.tool_completed', {
@@ -428,6 +494,15 @@ export class BrowserAgent {
     }
 
     signal.throwIfAborted();
+  }
+
+  private observe(observation: string): string {
+    if (!this.knowledge) return observation;
+
+    const sourceEventId = randomUUID();
+    this.emit('agent.evidence', {sourceEventId, observation});
+
+    return JSON.stringify({sourceEventId, observation});
   }
 
   private clip(value: string): string {

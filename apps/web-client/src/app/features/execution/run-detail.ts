@@ -1,3 +1,4 @@
+import { RunKnowledge } from './components/run-knowledge';
 import { Component, DestroyRef, inject, OnInit, signal, computed } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { DatePipe, DecimalPipe } from '@angular/common';
@@ -10,7 +11,15 @@ import { ActivityTimeline } from './components/activity-timeline';
 
 @Component({
   selector: 'app-run-detail',
-  imports: [RouterLink, DatePipe, DecimalPipe, RunMedia, RunStatusBadge, ActivityTimeline],
+  imports: [
+    RunKnowledge,
+    RouterLink,
+    DatePipe,
+    DecimalPipe,
+    RunMedia,
+    RunStatusBadge,
+    ActivityTimeline,
+  ],
   styleUrl: './execution.css',
   template: `
     @if (error()) {
@@ -69,6 +78,9 @@ import { ActivityTimeline } from './components/activity-timeline';
           <div class="activity"><app-activity-timeline [events]="events()" /></div>
         </section>
       </div>
+      @if (current.workspaceId && current.environmentId) {
+        <app-run-knowledge [workspaceId]="current.workspaceId" [runId]="current.id" />
+      }
       @if (!liveView && !active(current)) {
         <section class="panel verdict">
           <h3>

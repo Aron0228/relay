@@ -7,6 +7,7 @@ import 'execution_api.dart';
 import 'activity_timeline.dart';
 import 'run_media.dart';
 import 'run_status.dart';
+import 'run_knowledge.dart';
 
 class RunDetailPage extends StatefulWidget {
   const RunDetailPage({
@@ -301,6 +302,13 @@ class _RunDetailPageState extends State<RunDetailPage> {
                           );
                   },
                 ),
+                if (_run!.data['workspaceId'] != null &&
+                    _run!.data['environmentId'] != null)
+                  RunKnowledge(
+                    sessions: widget.sessions,
+                    runId: _run!.id,
+                    workspaceId: _run!.data['workspaceId'] as String,
+                  ),
                 if (!widget.liveView && !_run!.active)
                   Container(
                     width: double.infinity,

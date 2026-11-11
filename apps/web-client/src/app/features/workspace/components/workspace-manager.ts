@@ -1,3 +1,4 @@
+import { EnvironmentKnowledge } from './environment-knowledge';
 import { SelectField } from '../../../shared/select-field';
 import { Component, inject, input, OnInit, signal } from '@angular/core';
 import { LucideDynamicIcon, LucideInfo } from '@lucide/angular';
@@ -25,6 +26,7 @@ import {
     WorkspaceSettingsTabs,
     WorkspaceSidePanel,
     WorkspaceGithubSettings,
+    EnvironmentKnowledge,
   ],
   styleUrl: './workspace-manager.css',
   template: `
@@ -201,6 +203,18 @@ import {
             }
           </div>
         </section>
+        @if (tab() === 'knowledge') {
+          <section
+            role="tabpanel"
+            id="workspace-settings-knowledge"
+            aria-labelledby="workspace-settings-tab-knowledge"
+          >
+            <app-environment-knowledge
+              [workspaceId]="workspace.id"
+              [environments]="environments()"
+            />
+          </section>
+        }
         @if (tab() === 'github') {
           <section
             role="tabpanel"
