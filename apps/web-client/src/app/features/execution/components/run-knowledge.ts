@@ -1,81 +1,86 @@
+import { AppButton } from '../../../shared/app-button';
+import { ContentStack } from '../../../shared/layout';
+import { Disclosure } from '../../../shared/disclosure';
+import { KnowledgeVerificationCard } from '../../workspace/components/knowledge-verification';
+import { KnowledgeVerification as Verification } from '../../workspace/knowledge.models';
 import { Component, inject, input, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { WorkspaceService } from '../../workspace/workspace.service';
 
+interface PatchUsage {
+  id: string;
+  snapshot: { id: string; scopePath: string; proposal: { title: string; content: string } };
+}
 interface KnowledgeUsage {
   id: string;
   version: number;
   createdAt: string;
-  snapshot: { title: string; content: string; verificationStatus: string; stale: boolean };
+  snapshot: {
+    title: string;
+    content: string;
+    verificationStatus: string;
+    stale: boolean;
+    referenceOnly?: boolean;
+  };
 }
 
 @Component({
   selector: 'app-run-knowledge',
-  imports: [DatePipe],
+  imports: [DatePipe, AppButton, ContentStack, Disclosure, KnowledgeVerificationCard],
   template: `
-    <section>
-      <button (click)="load()" [disabled]="busy()">
-        {{ busy() ? 'Loading…' : 'Show knowledge supplied to this run' }}
-      </button>
+    <app-content-stack>
+      <div>
+        <button appButton (click)="load()" [disabled]="busy()">
+          {{ busy() ? 'Loading…' : 'Show knowledge supplied to this run' }}
+        </button>
+      </div>
       @if (error()) {
         <p role="alert">{{ error() }}</p>
       }
       @if (loaded()) {
         @for (item of items(); track item.id) {
-          <details>
-            <summary>{{ item.snapshot.title }} · Version {{ item.version }}</summary>
-            <p>{{ item.snapshot.content }}</p>
+          <app-disclosure [title]="item.snapshot.title + ' · Version ' + item.version"
+            ><p>{{ item.snapshot.content }}</p>
             <small
-              >{{ item.snapshot.verificationStatus
+              >{{
+                item.snapshot.referenceOnly
+                  ? 'Reference from another environment or origin · '
+                  : ''
+              }}{{ item.snapshot.verificationStatus
               }}{{ item.snapshot.stale ? ' · May be outdated' : '' }} · Retrieved
               {{ item.createdAt | date: 'medium' }}</small
-            >
-          </details>
+            ></app-disclosure
+          >
         } @empty {
           <p>No stored knowledge was supplied to this run.</p>
         }
+        <h3>Candidate patches supplied</h3>
+        @for (patch of patches(); track patch.id) {
+          <app-disclosure [title]="patch.snapshot.proposal.title + ' · ' + patch.snapshot.scopePath"
+            ><p>{{ patch.snapshot.proposal.content }}</p></app-disclosure
+          >
+        } @empty {
+          <p>No candidate patches were supplied.</p>
+        }
+        <h3>Patch checks from this run</h3>
+        @for (check of verifications(); track check.id) {
+          <app-knowledge-verification [verification]="check" [showPatchId]="true" />
+        } @empty {
+          <p>No patch checks were reported.</p>
+        }
       }
-    </section>
+    </app-content-stack>
   `,
-  styles: `
-    section {
-      margin-top: 24px;
-    }
-    button {
-      cursor: pointer;
-      color: var(--color-text);
-      background: var(--color-surface);
-      border: 1px solid var(--color-border);
-      border-radius: 8px;
-      padding: 12px 16px;
-      font: inherit;
-    }
-    button:hover {
-      background: var(--color-selected);
-    }
-    details {
-      padding: 16px;
-      margin-top: 12px;
-      border: 1px solid var(--color-border);
-      border-radius: 8px;
-    }
-    summary {
-      cursor: pointer;
-    }
-    p {
-      white-space: pre-wrap;
-      overflow-wrap: anywhere;
-    }
-    small {
-      color: var(--color-muted);
-    }
-  `,
+  styles:
+    ':host { display: block; margin-top: 24px; } p, h3 { margin: 0; } p { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; } h3 { font-size: 16px; } small { color: var(--color-muted); }',
 })
 export class RunKnowledge {
   readonly workspaceId = input.required<string>();
   readonly runId = input.required<string>();
   private readonly workspaces = inject(WorkspaceService);
   protected readonly items = signal<KnowledgeUsage[]>([]);
+  protected readonly patches = signal<PatchUsage[]>([]);
+  protected readonly verifications = signal<Verification[]>([]);
   protected readonly busy = signal(false);
   protected readonly loaded = signal(false);
   protected readonly error = signal('');
@@ -84,12 +89,17 @@ export class RunKnowledge {
     this.busy.set(true);
     this.error.set('');
     try {
-      this.items.set(
-        await this.workspaces.request<KnowledgeUsage[]>(
+      const path = `/workspaces/${this.workspaceId()}/runs/${this.runId()}`;
+      const [knowledge, patches] = await Promise.all([
+        this.workspaces.request<KnowledgeUsage[]>('GET', `${path}/knowledge`),
+        this.workspaces.request<{ patches: PatchUsage[]; verifications: Verification[] }>(
           'GET',
-          `/workspaces/${this.workspaceId()}/runs/${this.runId()}/knowledge`,
+          `${path}/knowledge-patches`,
         ),
-      );
+      ]);
+      this.items.set(knowledge);
+      this.patches.set(patches.patches);
+      this.verifications.set(patches.verifications);
       this.loaded.set(true);
     } catch {
       this.error.set('Could not load the knowledge supplied to this run.');

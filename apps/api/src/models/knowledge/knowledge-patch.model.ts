@@ -104,6 +104,42 @@ export class KnowledgePatch extends Entity {
   })
   decidedAt?: Date;
 
+  @property({
+    type: 'string',
+    postgresql: {columnName: 'source_environment_id', dataType: 'uuid'},
+  })
+  sourceEnvironmentId?: string | null;
+
+  @property({
+    type: 'string',
+    postgresql: {columnName: 'source_url', dataType: 'text'},
+  })
+  sourceUrl?: string | null;
+
+  @property({
+    type: 'string',
+    postgresql: {columnName: 'scope_origin', dataType: 'text'},
+  })
+  scopeOrigin?: string | null;
+
+  @property({
+    type: 'string',
+    postgresql: {columnName: 'scope_path', dataType: 'text'},
+  })
+  scopePath!: string;
+
+  @property({
+    type: 'string',
+    postgresql: {columnName: 'source_pull_request_id', dataType: 'uuid'},
+  })
+  sourcePullRequestId?: string | null;
+
+  @property({
+    type: 'string',
+    postgresql: {columnName: 'applied_verification_id', dataType: 'uuid'},
+  })
+  appliedVerificationId?: string | null;
+
   constructor(data?: Partial<KnowledgePatch>) {
     super(data);
   }

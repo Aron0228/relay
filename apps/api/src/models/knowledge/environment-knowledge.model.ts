@@ -95,6 +95,12 @@ export class EnvironmentKnowledge extends Entity {
   })
   updatedAt!: Date;
 
+  @property({
+    type: 'string',
+    postgresql: {columnName: 'scope_path', dataType: 'text'},
+  })
+  scopePath!: string;
+
   constructor(data?: Partial<EnvironmentKnowledge>) {
     super(data);
   }

@@ -1,8 +1,15 @@
 import 'package:flutter/material.dart';
 import '../../session_service.dart';
-import '../../widgets/app_dropdown.dart';
+import '../../widgets/app_layout.dart';
+import '../../widgets/app_choice_field.dart';
+import '../../widgets/app_disclosure.dart';
+import '../../widgets/app_pagination.dart';
+import 'knowledge_change.dart';
+import 'knowledge_evidence.dart';
+import '../../widgets/app_segmented_control.dart';
 import '../execution/run_detail.dart';
 import 'workspace_api.dart';
+import 'knowledge_patches.dart';
 
 class EnvironmentKnowledge extends StatefulWidget {
   const EnvironmentKnowledge({
@@ -28,6 +35,7 @@ class _EnvironmentKnowledgeState extends State<EnvironmentKnowledge> {
   String _type = '', _status = '';
   List<Map<String, dynamic>> _records = [], _patches = [];
   bool _busy = false;
+  bool _showPatches = false;
   String? _error;
   final Map<String, List<Map<String, dynamic>>> _sources = {};
   int _generation = 0, _offset = 0;
@@ -145,208 +153,187 @@ class _EnvironmentKnowledgeState extends State<EnvironmentKnowledge> {
     }
   }
 
-  Widget _filter(
-    String label,
-    String value,
-    List<String> options,
-    ValueChanged<String> update,
-  ) => AppDropdown<String>(
-    initialValue: value,
-    decoration: InputDecoration(labelText: label),
-    items: options
-        .map(
-          (item) => DropdownMenuItem(
-            value: item,
-            child: Text(
-              item.isEmpty
-                  ? 'All'
-                  : item == 'stale'
-                  ? 'Needs rechecking'
-                  : item,
-            ),
+  Widget _record(Map<String, dynamic> record) => AppDisclosure(
+    title: record['title'] as String,
+    subtitle:
+        '${record['type']} · ${record['verificationStatus']} · Confidence ${((record['confidence'] as num) * 100).round()}%',
+    children: [
+      SelectableText(record['content'] as String),
+      Text(
+        '${record['scopeOrigin']}${record['scopePath'] ?? '/'} · Version ${record['version']}',
+      ),
+      Text(
+        'Last independently checked: ${record['lastVerifiedAt'] ?? 'Not yet checked'}',
+      ),
+      AppActions(
+        children: [
+          TextButton(
+            onPressed: () => _source(record['sourceRunId'] as String),
+            child: const Text('View source run and observations'),
           ),
-        )
-        .toList(),
-    onChanged: (value) {
-      update(value!);
-      _load();
-    },
+        ],
+      ),
+      AppDisclosure(
+        title: 'Source observation IDs',
+        children: [
+          for (final id in record['sourceEventIds'] as List)
+            SelectableText('$id'),
+        ],
+      ),
+      AppActions(
+        children: [
+          TextButton(
+            onPressed: () => _showSources(record['id'] as String),
+            child: const Text('Show source observations'),
+          ),
+        ],
+      ),
+      if (_sources[record['id']]?.isNotEmpty == true)
+        KnowledgeEvidenceList(sources: _sources[record['id']]!),
+      Text(
+        'Changes and proposals',
+        style: Theme.of(context).textTheme.titleSmall,
+      ),
+      for (final patch in _patches.where(
+        (patch) => patch['knowledgeId'] == record['id'],
+      ))
+        KnowledgeChangeCard(
+          patch: patch,
+          sourceLabel: 'View evidence run',
+          onViewRun: () => _source(patch['sourceRunId'] as String),
+          actions: widget.admin && patch['status'] == 'pending'
+              ? [
+                  OutlinedButton(
+                    onPressed:
+                        _busy ||
+                            patch['latestVerification']?['result'] !=
+                                'confirmed'
+                        ? null
+                        : () => _decide(patch['id'] as String, true),
+                    child: const Text('Apply confirmed change'),
+                  ),
+                  TextButton(
+                    onPressed: _busy
+                        ? null
+                        : () => _decide(patch['id'] as String, false),
+                    child: const Text('Reject'),
+                  ),
+                ]
+              : [],
+        ),
+    ],
   );
 
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      const SizedBox(height: 24),
-      Text(
-        'Environment knowledge',
-        style: Theme.of(context).textTheme.titleMedium,
-      ),
-      const SizedBox(height: 8),
-      const Text(
-        'Observations saved by previous runs. They may need checking as the site changes.',
-      ),
-      const SizedBox(height: 24),
-      AppDropdown<String>(
-        key: ValueKey(_environment),
-        initialValue: _environment,
-        decoration: const InputDecoration(labelText: 'Environment'),
-        items: widget.environments
-            .map(
-              (item) => DropdownMenuItem(
-                value: item['id'] as String,
-                child: Text(item['name'] as String),
-              ),
-            )
-            .toList(),
-        onChanged: (value) {
-          setState(() => _environment = value);
-          _load();
-        },
-      ),
-      const SizedBox(height: 16),
-      TextField(
-        controller: _search,
-        maxLength: 500,
-        decoration: const InputDecoration(labelText: 'Search knowledge'),
-        onSubmitted: (_) => _load(),
-      ),
-      const SizedBox(height: 16),
-      _filter('Type', _type, [
-        '',
-        'navigation',
-        'workflow',
-        'precondition',
-        'behavior',
-      ], (value) => _type = value),
-      const SizedBox(height: 16),
-      _filter('Status', _status, [
-        '',
-        'unverified',
-        'verified',
-        'retired',
-        'stale',
-      ], (value) => _status = value),
-      const SizedBox(height: 16),
-      Align(
-        alignment: Alignment.centerRight,
-        child: OutlinedButton(
-          onPressed: _busy || _environment == null ? null : _load,
-          child: const Text('Refresh'),
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(top: AppSpacing.section),
+    child: AppStack(
+      children: [
+        const AppSectionHeading(
+          title: 'Environment knowledge',
+          description:
+              'Observations saved by previous runs. They may need checking as the site changes.',
         ),
-      ),
-      if (_busy) const LinearProgressIndicator(),
-      if (_error != null) Text(_error!),
-      if (!_busy && _records.isEmpty)
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 24),
-          child: Text('No knowledge matches these filters.'),
-        ),
-      for (final record in _records)
-        Card(
-          child: ExpansionTile(
-            title: Text(record['title'] as String),
-            subtitle: Text(
-              '${record['type']} · ${record['verificationStatus']} · Confidence ${((record['confidence'] as num) * 100).round()}%',
+        AppFilterBar(
+          children: [
+            AppChoiceField(
+              key: ValueKey(_environment),
+              label: 'Environment',
+              value: _environment,
+              options: {
+                for (final item in widget.environments)
+                  item['id'] as String: item['name'] as String,
+              },
+              onChanged: (value) {
+                setState(() => _environment = value);
+                _load();
+              },
             ),
-            expandedCrossAxisAlignment: CrossAxisAlignment.start,
-            childrenPadding: const EdgeInsets.all(16),
-            children: [
-              SelectableText(record['content'] as String),
-              const SizedBox(height: 16),
-              Text('${record['scopeOrigin']} · Version ${record['version']}'),
-              Text(
-                'Last independently checked: ${record['lastVerifiedAt'] ?? 'Not yet checked'}',
+            if (!_showPatches) ...[
+              TextField(
+                controller: _search,
+                maxLength: 500,
+                decoration: const InputDecoration(
+                  labelText: 'Search knowledge',
+                ),
+                onSubmitted: (_) => _load(),
               ),
-              TextButton(
-                onPressed: () => _source(record['sourceRunId'] as String),
-                child: const Text('View source run and observations'),
+              AppChoiceField(
+                label: 'Type',
+                value: _type,
+                options: const {
+                  '': 'All',
+                  'navigation': 'navigation',
+                  'workflow': 'workflow',
+                  'precondition': 'precondition',
+                  'behavior': 'behavior',
+                },
+                onChanged: (value) {
+                  _type = value;
+                  _load();
+                },
               ),
-              ExpansionTile(
-                title: const Text('Source observation IDs'),
+              AppChoiceField(
+                label: 'Status',
+                value: _status,
+                options: const {
+                  '': 'All',
+                  'unverified': 'unverified',
+                  'verified': 'verified',
+                  'retired': 'retired',
+                  'stale': 'Needs rechecking',
+                },
+                onChanged: (value) {
+                  _status = value;
+                  _load();
+                },
+              ),
+              AppActions(
                 children: [
-                  for (final id in record['sourceEventIds'] as List)
-                    SelectableText('$id'),
+                  OutlinedButton(
+                    onPressed: _busy || _environment == null ? null : _load,
+                    child: const Text('Refresh'),
+                  ),
                 ],
               ),
-              const SizedBox(height: 16),
-              TextButton(
-                onPressed: () => _showSources(record['id'] as String),
-                child: const Text('Show source observations'),
-              ),
-              for (final source
-                  in _sources[record['id']] ?? <Map<String, dynamic>>[])
-                ExpansionTile(
-                  title: Text(source['id'] as String),
-                  children: [
-                    SelectableText(source['payload']['observation'] as String),
-                  ],
-                ),
-              Text(
-                'Changes and proposals',
-                style: Theme.of(context).textTheme.titleSmall,
-              ),
-              for (final patch in _patches.where(
-                (patch) => patch['knowledgeId'] == record['id'],
-              )) ...[
-                const Divider(),
-                Text('${patch['operation']} · ${patch['status']}'),
-                Text('${patch['createdAt']}'),
-                const SizedBox(height: 8),
-                Text(patch['reason'] as String),
-                if (patch['operation'] == 'update' && patch['previous'] != null)
-                  Text('Previous: ${patch['previous']['content']}'),
-                Text(patch['proposal']['content'] as String),
-                TextButton(
-                  onPressed: () => _source(patch['sourceRunId'] as String),
-                  child: const Text('View evidence run'),
-                ),
-                if (patch['status'] == 'pending' && widget.admin)
-                  Wrap(
-                    spacing: 12,
-                    children: [
-                      OutlinedButton(
-                        onPressed: _busy
-                            ? null
-                            : () => _decide(patch['id'] as String, true),
-                        child: const Text('Accept change'),
-                      ),
-                      TextButton(
-                        onPressed: _busy
-                            ? null
-                            : () => _decide(patch['id'] as String, false),
-                        child: const Text('Reject'),
-                      ),
-                    ],
-                  ),
-              ],
             ],
-          ),
-        ),
-      if (_records.isNotEmpty || _offset > 0)
-        Wrap(
-          spacing: 12,
-          children: [
-            OutlinedButton(
-              onPressed: _offset == 0 || _busy
-                  ? null
-                  : () {
-                      _offset -= 50;
-                      _load(reset: false);
-                    },
-              child: const Text('Previous'),
-            ),
-            OutlinedButton(
-              onPressed: _records.length < 50 || _busy
-                  ? null
-                  : () {
-                      _offset += 50;
-                      _load(reset: false);
-                    },
-              child: const Text('Next'),
-            ),
           ],
         ),
-    ],
+        AppSegmentedControl(
+          options: const {
+            'knowledge': 'Active knowledge',
+            'patches': 'Patches and checks',
+          },
+          selected: _showPatches ? 'patches' : 'knowledge',
+          onChanged: (value) =>
+              setState(() => _showPatches = value == 'patches'),
+        ),
+        if (_showPatches && _environment != null)
+          KnowledgePatches(
+            sessions: widget.sessions,
+            workspaceId: widget.workspaceId,
+            environmentId: _environment!,
+            environments: widget.environments,
+            admin: widget.admin,
+          ),
+        if (!_showPatches) ...[
+          if (_busy) const LinearProgressIndicator(),
+          if (_error != null) Text(_error!),
+          if (!_busy && _records.isEmpty)
+            const Text('No knowledge matches these filters.'),
+          for (final record in _records) _record(record),
+          if (_records.isNotEmpty || _offset > 0)
+            AppPagination(
+              hasPrevious: _offset > 0,
+              hasNext: _records.length == 50,
+              busy: _busy,
+              onChanged: (direction) {
+                _offset += direction * 50;
+                _load(reset: false);
+              },
+            ),
+        ],
+      ],
+    ),
   );
 }

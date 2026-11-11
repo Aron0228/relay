@@ -1,3 +1,11 @@
+import { AppButton } from '../../../shared/app-button';
+import { ActionRow, ContentStack, Field, FilterBar, SectionHeading } from '../../../shared/layout';
+import { Disclosure } from '../../../shared/disclosure';
+import { Pagination } from '../../../shared/pagination';
+import { KnowledgeEvidenceList } from './knowledge-evidence';
+import { KnowledgeChangeCard } from './knowledge-change';
+import { SegmentedControl } from '../../../shared/segmented-control';
+import { KnowledgePatches } from './knowledge-patches';
 import { Component, effect, inject, input, signal } from '@angular/core';
 import { DatePipe, PercentPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -11,6 +19,7 @@ interface KnowledgeRecord {
   content: string;
   type: string;
   scopeOrigin: string;
+  scopePath: string;
   confidence: number;
   verificationStatus: string;
   lastVerifiedAt?: string;
@@ -21,7 +30,7 @@ interface KnowledgeRecord {
 }
 interface KnowledgePatch {
   id: string;
-  knowledgeId: string;
+  knowledgeId?: string;
   operation: string;
   status: string;
   reason: string;
@@ -30,221 +39,207 @@ interface KnowledgePatch {
   createdAt: string;
   proposal: { title: string; content: string };
   previous?: { content: string };
+  latestVerification?: { result: string };
 }
 
 @Component({
   selector: 'app-environment-knowledge',
-  imports: [FormsModule, DatePipe, PercentPipe, RouterLink, SelectField],
+  imports: [
+    AppButton,
+    ActionRow,
+    ContentStack,
+    Field,
+    FilterBar,
+    SectionHeading,
+    Disclosure,
+    Pagination,
+    KnowledgeEvidenceList,
+    KnowledgeChangeCard,
+    SegmentedControl,
+    KnowledgePatches,
+    FormsModule,
+    DatePipe,
+    PercentPipe,
+    RouterLink,
+    SelectField,
+  ],
   template: `
-    <header>
-      <h2>Environment knowledge</h2>
-      <p>Observations saved by previous runs. They may need checking as the site changes.</p>
-    </header>
-    <div class="filters">
-      <label
-        >Environment<app-select-field
-          ><select [ngModel]="environmentId()" (ngModelChange)="selectEnvironment($event)">
-            <option value="">Choose an environment</option>
-            @for (environment of environments(); track environment.id) {
-              <option [value]="environment.id">{{ environment.name }}</option>
-            }
-          </select></app-select-field
-        ></label
-      >
-      <label
-        >Search<input
-          [(ngModel)]="search"
-          (keyup.enter)="load()"
-          placeholder="Search knowledge"
-          maxlength="500"
-      /></label>
-      <label
-        >Type<app-select-field
-          ><select [(ngModel)]="type" (ngModelChange)="load()">
-            <option value="">All types</option>
-            <option value="navigation">Navigation</option>
-            <option value="workflow">Workflow</option>
-            <option value="precondition">Precondition</option>
-            <option value="behavior">Behavior</option>
-          </select></app-select-field
-        ></label
-      >
-      <label
-        >Status<app-select-field
-          ><select [(ngModel)]="status" (ngModelChange)="load()">
-            <option value="">All statuses</option>
-            <option value="unverified">Unverified</option>
-            <option value="verified">Verified</option>
-            <option value="retired">Retired</option>
-            <option value="stale">Needs rechecking</option>
-          </select></app-select-field
-        ></label
-      >
-      <button (click)="load()" [disabled]="busy() || !environmentId()">Refresh</button>
-    </div>
-    @if (error()) {
-      <p role="alert">{{ error() }}</p>
-    }
-    @if (busy()) {
-      <p>Loading knowledge…</p>
-    }
-    @for (record of records(); track record.id) {
-      <details>
-        <summary>
-          <strong>{{ record.title }}</strong
-          ><span
-            >{{ record.type }} · {{ record.verificationStatus }} · Confidence
-            {{ record.confidence | percent }}</span
+    <app-content-stack>
+      <app-section-heading
+        title="Environment knowledge"
+        description="Observations saved by previous runs. They may need checking as the site changes."
+      />
+      <app-filter-bar>
+        <app-field controlId="knowledge-environment" label="Environment"
+          ><app-select-field
+            ><select
+              id="knowledge-environment"
+              [ngModel]="environmentId()"
+              (ngModelChange)="selectEnvironment($event)"
+            >
+              <option value="">Choose an environment</option>
+              @for (environment of environments(); track environment.id) {
+                <option [value]="environment.id">{{ environment.name }}</option>
+              }
+            </select></app-select-field
+          ></app-field
+        >
+        @if (view() === 'knowledge') {
+          <app-field controlId="knowledge-search" label="Search"
+            ><input
+              id="knowledge-search"
+              [(ngModel)]="search"
+              (keyup.enter)="load()"
+              placeholder="Search knowledge"
+              maxlength="500"
+          /></app-field>
+          <app-field controlId="knowledge-type" label="Type"
+            ><app-select-field
+              ><select id="knowledge-type" [(ngModel)]="type" (ngModelChange)="load()">
+                <option value="">All types</option>
+                <option value="navigation">Navigation</option>
+                <option value="workflow">Workflow</option>
+                <option value="precondition">Precondition</option>
+                <option value="behavior">Behavior</option>
+              </select></app-select-field
+            ></app-field
           >
-        </summary>
-        <p class="content">{{ record.content }}</p>
-        <p class="muted">
-          {{ record.scopeOrigin }} · Version {{ record.version }} · Updated
-          {{ record.updatedAt | date: 'medium' }}
-        </p>
-        <p>
-          Last independently checked:
-          {{ (record.lastVerifiedAt | date: 'medium') || 'Not yet checked' }}
-        </p>
-        <a [routerLink]="['/runs', record.sourceRunId]">View source run and observations</a>
-        <details>
-          <summary>Source observation IDs</summary>
-          @for (id of record.sourceEventIds; track id) {
-            <code>{{ id }}</code>
-          }
-        </details>
-        <button (click)="showSources(record.id)">Show source observations</button>
-        @for (source of sources()[record.id] || []; track source.id) {
-          <details>
-            <summary>{{ source.id }}</summary>
-            <pre>{{ source.payload.observation }}</pre>
-          </details>
+          <app-field controlId="knowledge-status" label="Status"
+            ><app-select-field
+              ><select id="knowledge-status" [(ngModel)]="status" (ngModelChange)="load()">
+                <option value="">All statuses</option>
+                <option value="unverified">Unverified</option>
+                <option value="verified">Verified</option>
+                <option value="retired">Retired</option>
+                <option value="stale">Needs rechecking</option>
+              </select></app-select-field
+            ></app-field
+          >
+          <button appButton (click)="load()" [disabled]="busy() || !environmentId()">
+            Refresh
+          </button>
         }
-        <h3>Changes and proposals</h3>
-        @for (patch of patchesFor(record.id); track patch.id) {
-          <article>
-            <strong>{{ patch.operation }} · {{ patch.status }}</strong
-            ><span class="muted">{{ patch.createdAt | date: 'medium' }}</span>
-            <p>{{ patch.reason }}</p>
-            @if (patch.previous?.content && patch.operation === 'update') {
-              <p class="content">Previous: {{ patch.previous!.content }}</p>
+      </app-filter-bar>
+      <app-segmented-control
+        label="Knowledge view"
+        [items]="views"
+        [selected]="view()"
+        (changed)="selectView($event)"
+      />
+      @if (view() === 'knowledge') {
+        @if (error()) {
+          <p role="alert">{{ error() }}</p>
+        }
+        @if (busy()) {
+          <p>Loading knowledge…</p>
+        }
+        @for (record of records(); track record.id) {
+          <app-disclosure
+            [title]="record.title"
+            [subtitle]="
+              record.type +
+              ' · ' +
+              record.verificationStatus +
+              ' · Confidence ' +
+              (record.confidence | percent)
+            "
+          >
+            <p class="content">{{ record.content }}</p>
+            <p class="muted">
+              {{ record.scopeOrigin }}{{ record.scopePath }} · Version {{ record.version }} ·
+              Updated {{ record.updatedAt | date: 'medium' }}
+            </p>
+            <p>
+              Last independently checked:
+              {{ (record.lastVerifiedAt | date: 'medium') || 'Not yet checked' }}
+            </p>
+            <a [routerLink]="['/runs', record.sourceRunId]">View source run and observations</a>
+            <app-disclosure title="Source observation IDs">
+              @for (id of record.sourceEventIds; track id) {
+                <code>{{ id }}</code>
+              }
+            </app-disclosure>
+            <app-action-row
+              ><button appButton (click)="showSources(record.id)">
+                Show source observations
+              </button></app-action-row
+            >
+            <app-knowledge-evidence [sources]="sources()[record.id] || []" />
+            <h3>Changes and proposals</h3>
+            @for (patch of patchesFor(record.id); track patch.id) {
+              <app-knowledge-change [patch]="patch" sourceLabel="View evidence run">
+                @if (patch.status === 'pending' && workspaces.admin()) {
+                  <app-action-row
+                    ><button
+                      appButton
+                      (click)="decide(patch.id, true)"
+                      [disabled]="busy() || patch.latestVerification?.result !== 'confirmed'"
+                    >
+                      Apply confirmed change</button
+                    ><button appButton (click)="decide(patch.id, false)" [disabled]="busy()">
+                      Reject
+                    </button></app-action-row
+                  >
+                }
+              </app-knowledge-change>
+            } @empty {
+              <p>No recorded changes.</p>
             }
-            <p class="content">{{ patch.proposal.content }}</p>
-            <a [routerLink]="['/runs', patch.sourceRunId]">View evidence run</a>
-            @if (patch.status === 'pending' && workspaces.admin()) {
-              <div class="actions">
-                <button (click)="decide(patch.id, true)" [disabled]="busy()">Accept change</button
-                ><button (click)="decide(patch.id, false)" [disabled]="busy()">Reject</button>
-              </div>
-            }
-          </article>
+          </app-disclosure>
         } @empty {
-          <p>No recorded changes.</p>
+          @if (environmentId() && !busy()) {
+            <p>No knowledge matches these filters.</p>
+          }
         }
-      </details>
-    } @empty {
-      @if (environmentId() && !busy()) {
-        <p>No knowledge matches these filters.</p>
+        @if (records().length || offset > 0) {
+          <app-pagination
+            [hasPrevious]="offset > 0"
+            [hasNext]="records().length === 50"
+            [busy]="busy()"
+            (changed)="page($event)"
+          />
+        }
+      } @else if (environmentId()) {
+        <app-knowledge-patches
+          [workspaceId]="workspaceId()"
+          [environmentId]="environmentId()"
+          [environments]="environments()"
+          [admin]="workspaces.admin()"
+        />
       }
-    }
-    @if (records().length || offset > 0) {
-      <div class="actions">
-        <button [disabled]="offset === 0 || busy()" (click)="page(-1)">Previous</button
-        ><button [disabled]="records().length < 50 || busy()" (click)="page(1)">Next</button>
-      </div>
-    }
+    </app-content-stack>
   `,
   styles: `
-    :host {
-      display: block;
+    p,
+    h3 {
+      margin: 0;
     }
-    header {
-      margin-bottom: 28px;
+    h3 {
+      font-size: 16px;
     }
-    h2 {
-      margin: 0 0 8px;
-      font-size: 20px;
+    p {
+      line-height: 1.6;
     }
-    header p,
-    .muted,
-    summary span {
+    .muted {
       color: var(--color-muted);
     }
-    .filters {
-      display: flex;
-      gap: 16px;
-      align-items: end;
-      flex-wrap: wrap;
-      margin-bottom: 24px;
-    }
-    label {
-      display: grid;
-      gap: 8px;
-      flex: 1;
-      min-width: 150px;
-    }
-    input,
-    select,
-    button {
-      color: var(--color-text);
-      background: var(--color-background);
-      border: 1px solid var(--color-border);
-      border-radius: 8px;
-      padding: 11px 14px;
-      font: inherit;
-    }
-    select {
-      width: 100%;
-    }
-    button {
-      cursor: pointer;
-    }
-    button:hover {
-      background: var(--color-selected);
-    }
-    button:disabled {
-      opacity: 0.5;
-      cursor: default;
-    }
-    details {
-      border: 1px solid var(--color-border);
-      border-radius: 10px;
-      padding: 18px;
-      margin-bottom: 12px;
-    }
-    summary {
-      cursor: pointer;
-    }
-    summary span,
-    article > span {
-      display: block;
-      margin-top: 8px;
-      font-size: 13px;
-    }
-    pre,
-    .content {
+    .content,
+    code {
       white-space: pre-wrap;
       overflow-wrap: anywhere;
-      line-height: 1.6;
     }
     a {
       color: var(--color-primary);
     }
-    article {
-      border-top: 1px solid var(--color-border);
-      padding: 18px 0;
-    }
-    code {
-      display: block;
-      overflow-wrap: anywhere;
-    }
-    .actions {
-      display: flex;
-      gap: 12px;
-      margin-top: 16px;
-    }
-    h3 {
-      font-size: 16px;
+    input {
+      box-sizing: border-box;
+      width: 100%;
+      font: inherit;
+      padding: 11px 14px;
+      color: var(--color-text);
+      background: var(--color-content);
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
     }
   `,
 })
@@ -257,6 +252,15 @@ export class EnvironmentKnowledge {
   protected readonly patches = signal<KnowledgePatch[]>([]);
   protected readonly busy = signal(false);
   protected readonly error = signal('');
+  protected readonly view = signal<'knowledge' | 'patches'>('knowledge');
+  protected readonly views = [
+    { id: 'knowledge', label: 'Active knowledge' },
+    { id: 'patches', label: 'Patches and checks' },
+  ];
+
+  protected selectView(view: string) {
+    this.view.set(view as 'knowledge' | 'patches');
+  }
   protected search = '';
   protected type = '';
   protected status = '';

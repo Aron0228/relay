@@ -52,8 +52,27 @@ export class EnvironmentKnowledgeController {
     @param.path.string('environmentId', {schema: {format: 'uuid'}})
     environmentId: string,
     @inject(SecurityBindings.USER) user: UserProfile,
+    @param.query.number('offset', {schema: {type: 'integer', minimum: 0}})
+    offset = 0,
+    @param.query.string('status', {
+      schema: {enum: ['pending', 'accepted', 'rejected', 'conflict']},
+    })
+    status?: string,
+    @param.query.string('result', {
+      schema: {
+        enum: ['unverified', 'confirmed', 'contradicted', 'inconclusive'],
+      },
+    })
+    result?: string,
   ) {
-    return this.knowledge.history(workspaceId, environmentId, user[securityId]);
+    return this.knowledge.history(
+      workspaceId,
+      environmentId,
+      user[securityId],
+      offset,
+      status,
+      result,
+    );
   }
 
   @get(
@@ -99,6 +118,59 @@ export class EnvironmentKnowledgeController {
       id,
       result.data.accept,
     );
+  }
+
+  @get(
+    '/api/workspaces/{workspaceId}/environments/{environmentId}/knowledge-patches/{id}',
+  )
+  patchDetail(
+    @param.path.string('workspaceId', {schema: {format: 'uuid'}})
+    workspaceId: string,
+    @param.path.string('environmentId', {schema: {format: 'uuid'}})
+    environmentId: string,
+    @param.path.string('id', {schema: {format: 'uuid'}}) id: string,
+    @inject(SecurityBindings.USER) user: UserProfile,
+    @param.query.number('offset', {schema: {type: 'integer', minimum: 0}})
+    offset = 0,
+  ) {
+    return this.knowledge.patchDetail(
+      workspaceId,
+      environmentId,
+      user[securityId],
+      id,
+      offset,
+    );
+  }
+
+  @get(
+    '/api/workspaces/{workspaceId}/environments/{environmentId}/knowledge-patches/{patchId}/verifications/{id}',
+  )
+  verification(
+    @param.path.string('workspaceId', {schema: {format: 'uuid'}})
+    workspaceId: string,
+    @param.path.string('environmentId', {schema: {format: 'uuid'}})
+    environmentId: string,
+    @param.path.string('patchId', {schema: {format: 'uuid'}}) patchId: string,
+    @param.path.string('id', {schema: {format: 'uuid'}}) id: string,
+    @inject(SecurityBindings.USER) user: UserProfile,
+  ) {
+    return this.knowledge.verificationDetail(
+      workspaceId,
+      environmentId,
+      user[securityId],
+      patchId,
+      id,
+    );
+  }
+
+  @get('/api/workspaces/{workspaceId}/runs/{id}/knowledge-patches')
+  runPatches(
+    @param.path.string('workspaceId', {schema: {format: 'uuid'}})
+    workspaceId: string,
+    @param.path.string('id', {schema: {format: 'uuid'}}) id: string,
+    @inject(SecurityBindings.USER) user: UserProfile,
+  ) {
+    return this.knowledge.runPatches(workspaceId, id, user[securityId]);
   }
 
   @get('/api/workspaces/{workspaceId}/runs/{id}/knowledge')
