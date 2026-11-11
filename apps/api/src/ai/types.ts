@@ -1,3 +1,4 @@
+import {KnowledgeVerificationSummary} from './knowledge-tools';
 import {PrContextData} from './pr-context';
 /* eslint-disable @typescript-eslint/naming-convention -- Chat Completions protocol uses snake_case fields. */
 export const AGENT_VERDICT = {
@@ -100,6 +101,7 @@ export interface AgentResult extends AgentConclusion {
   stopReason: AgentStopReason;
   turns: number;
   toolCalls: number;
+  knowledgeVerifications?: KnowledgeVerificationSummary[];
   failedToolCalls?: number;
   tokenUsage?: TokenUsage;
   model: string;

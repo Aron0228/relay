@@ -1,3 +1,4 @@
+import {EnvironmentKnowledgeService} from './environment-knowledge.service';
 import {BindingScope, inject, lifeCycleObserver, service} from '@loopback/core';
 import {IsolationLevel, repository} from '@loopback/repository';
 import {HttpErrors, Response} from '@loopback/rest';
@@ -104,6 +105,8 @@ export class WorkerService {
     @service(WorkerCapacityService) private capacity: WorkerCapacityService,
     @inject(WORKER_SERVICE_OPTIONS_BINDING_KEY, {optional: true})
     private options: WorkerServiceOptions = {},
+    @service(EnvironmentKnowledgeService)
+    private knowledge?: EnvironmentKnowledgeService,
   ) {
     for (const [name, value] of Object.entries({
       WORKER_CONCURRENCY: this.concurrency,
@@ -808,6 +811,7 @@ export class WorkerService {
         id,
         () => lost,
         () => deadline,
+        token,
       );
     } catch (error) {
       await this.finish(id, {
@@ -826,6 +830,7 @@ export class WorkerService {
     id: string,
     leaseLost: () => boolean,
     leaseDeadline: () => number,
+    leaseToken: string,
   ): Promise<void> {
     const run = await this.runs.findById(id);
 
@@ -976,7 +981,42 @@ export class WorkerService {
     }, executionTimeoutMs);
 
     child.on('message', (message: WorkerMessage) => {
-      if (message.type === 'event') {
+      if (message.type === 'knowledge-request') {
+        journal = journal.then(async () => {
+          let value: unknown;
+          let error: string | undefined;
+
+          try {
+            if (
+              leaseLost() ||
+              Date.now() >= leaseDeadline() ||
+              this.stopping ||
+              !this.knowledge
+            )
+              throw new Error('Worker knowledge access is unavailable');
+
+            value = await this.knowledge.handle(
+              id,
+              message.request,
+              leaseToken,
+            );
+          } catch (failure) {
+            error = (failure as Error).message;
+          }
+
+          if (child.connected)
+            child.send(
+              {
+                type: 'knowledge-result',
+                requestId: message.requestId,
+                value,
+                error,
+              },
+              () => {},
+            );
+        });
+        journal.catch(() => terminate());
+      } else if (message.type === 'event') {
         journal = journal.then(() =>
           this.event(id, message.event, message.payload),
         );
@@ -1027,6 +1067,9 @@ export class WorkerService {
           videoDirectory: path.dirname(this.videoPath(id)),
           exampleUrl,
           actionDelayMs: this.actionDelayMs,
+          knowledgeEnabled: Boolean(
+            this.knowledge && run.environmentId && run.workspaceId,
+          ),
         },
       });
 

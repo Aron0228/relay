@@ -1,3 +1,5 @@
+import {randomUUID} from 'node:crypto';
+import {KnowledgeRequest} from '../ai/knowledge-tools';
 import {BrowserAgent} from '../ai/browser-agent';
 import {OpenAiCompatibleProvider} from '../ai/openai-compatible.provider';
 import {mkdir} from 'node:fs/promises';
@@ -16,6 +18,33 @@ let cancelled = false;
 let started = false;
 let leaseWatchdog: ReturnType<typeof setTimeout> | undefined;
 const cancellation = new AbortController();
+const knowledgeRequests = new Map<
+  string,
+  {resolve: (value: unknown) => void; reject: (error: Error) => void}
+>();
+
+async function knowledgeRequest(request: KnowledgeRequest): Promise<unknown> {
+  const requestId = randomUUID();
+
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      knowledgeRequests.delete(requestId);
+      reject(new Error('Knowledge request timed out'));
+    }, 10000);
+
+    knowledgeRequests.set(requestId, {
+      resolve: value => {
+        clearTimeout(timeout);
+        resolve(value);
+      },
+      reject: error => {
+        clearTimeout(timeout);
+        reject(error);
+      },
+    });
+    emit({type: 'knowledge-request', requestId, request});
+  });
+}
 
 function heartbeat(deadline: number): void {
   clearTimeout(leaseWatchdog);
@@ -59,6 +88,7 @@ async function execute(input: WorkerInput): Promise<void> {
         new OpenAiCompatibleProvider(),
         browser,
         (event, payload) => emit({type: 'event', event, payload}),
+        input.knowledgeEnabled ? knowledgeRequest : undefined,
       );
 
       result.agentResult = await agent.run(
@@ -107,7 +137,13 @@ async function execute(input: WorkerInput): Promise<void> {
 }
 
 process.on('message', (command: WorkerCommand) => {
-  if (command.type === 'heartbeat') {
+  if (command.type === 'knowledge-result') {
+    const pending = knowledgeRequests.get(command.requestId);
+    knowledgeRequests.delete(command.requestId);
+
+    if (command.error) pending?.reject(new Error(command.error));
+    else pending?.resolve(command.value);
+  } else if (command.type === 'heartbeat') {
     heartbeat(command.deadline);
   } else if (command.type === 'cancel') {
     cancel().catch(() => {});

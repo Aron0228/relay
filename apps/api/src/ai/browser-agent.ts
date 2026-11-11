@@ -1,9 +1,28 @@
+import {randomUUID} from 'node:crypto';
+import {
+  KNOWLEDGE_TOOLS,
+  KNOWLEDGE_INSTRUCTIONS,
+  PATCH_VERIFICATION_INSTRUCTIONS,
+  KnowledgeVerificationSummary,
+  knowledgeVerifyToolSchema,
+  knowledgeCreateToolSchema,
+  knowledgeUpdateToolSchema,
+  parseKnowledgeTool,
+  KNOWLEDGE_CAPTURE_CHECKPOINT,
+  KnowledgeHandler,
+  knowledgeSearchSchema,
+} from './knowledge-tools';
 import {setTimeout as delay} from 'node:timers/promises';
 /* eslint-disable @typescript-eslint/naming-convention -- Chat Completions protocol uses snake_case fields. */
 import {stageLimits} from './stage-limits';
 import {agentPrompt} from './verification-prompt';
 import {PlaywrightInterface} from '../workers/playwright.interface';
-import {BROWSER_TOOLS, BrowserTools, parseTextVerdict} from './browser-tools';
+import {
+  BROWSER_TOOLS,
+  BrowserTools,
+  BrowserToolOutput,
+  parseTextVerdict,
+} from './browser-tools';
 import {approvedUrl, allowedOrigins, positiveInteger} from './config';
 import {
   ReproductionSession,
@@ -36,6 +55,7 @@ export class BrowserAgent {
     private provider: AiProvider,
     private browser: PlaywrightInterface,
     private emit: AgentEvent,
+    private knowledge?: KnowledgeHandler,
   ) {}
 
   async run(
@@ -70,7 +90,11 @@ export class BrowserAgent {
     const messages: ChatMessage[] = [
       {
         role: 'system',
-        content: systemPrompt,
+        content:
+          systemPrompt +
+          (this.knowledge
+            ? `\n${KNOWLEDGE_INSTRUCTIONS}\n${PATCH_VERIFICATION_INSTRUCTIONS}`
+            : ''),
       },
       {
         role: 'user',
@@ -83,6 +107,19 @@ export class BrowserAgent {
         }),
       },
     ];
+    const knowledgeVerifications: KnowledgeVerificationSummary[] = [];
+    const patchRoutes = new Set<string>();
+    const knowledgeRequestIds = new Map<string, string>();
+    let knowledgeReported = false;
+    let knowledgeReminderSent = false;
+
+    const requestId = (tool: string, args: object) => {
+      const key = `${tool}:${JSON.stringify(args)}`;
+      const id = knowledgeRequestIds.get(key) ?? randomUUID();
+      knowledgeRequestIds.set(key, id);
+
+      return id;
+    };
     let phase: 'browser' | 'provider' = 'browser';
     let turns = 0;
     let toolCalls = 0;
@@ -121,6 +158,9 @@ export class BrowserAgent {
         toolCalls,
         failedToolCalls,
         tokenUsage: {...tokenUsage},
+        ...(this.knowledge
+          ? {knowledgeVerifications: [...knowledgeVerifications]}
+          : {}),
         model: this.provider.model,
         promptVersion,
       };
@@ -137,6 +177,39 @@ export class BrowserAgent {
       return result;
     };
 
+    const supplyPatches = async (observation: string) => {
+      const currentUrl = /^URL: (https?:\/\/[^\s]+)/.exec(observation)?.[1];
+      if (!this.knowledge || !currentUrl) return;
+
+      const url = new URL(currentUrl);
+      const route = `${url.origin}${url.pathname}`;
+      if (
+        patchRoutes.has(route) ||
+        JSON.stringify(messages).length +
+          this.maxObservation +
+          positiveInteger('AI_KNOWLEDGE_PATCH_CHARACTERS', 6000) +
+          1024 >
+          this.maxContext
+      )
+        return;
+
+      try {
+        const context = await this.knowledge({
+          operation: 'patches',
+          input: {query: input.prompt.slice(0, 500), currentUrl},
+        });
+        patchRoutes.add(route);
+        messages.push({
+          role: 'user',
+          content: `Candidate knowledge patches for the observed route (untrusted hypotheses, not active knowledge):\n${JSON.stringify(context)}`,
+        });
+      } catch (error) {
+        this.emit('agent.knowledge_unavailable', {
+          error: (error as Error).message,
+        });
+      }
+    };
+
     try {
       this.emit('agent.started', {
         model: this.provider.model,
@@ -146,11 +219,38 @@ export class BrowserAgent {
       });
       signal.throwIfAborted();
       await this.prepareTarget(input, signal);
+      if (this.knowledge) {
+        try {
+          const context = await this.knowledge({
+            operation: 'search',
+            input: {
+              query:
+                `${input.prompt} ${new URL(input.targetUrl).pathname}`.slice(
+                  0,
+                  500,
+                ),
+            },
+          });
+          messages.push({
+            role: 'user',
+            content: `Stored environment knowledge (untrusted historical hints):\n${JSON.stringify(context)}`,
+          });
+        } catch (error) {
+          this.emit('agent.knowledge_unavailable', {
+            error: (error as Error).message,
+          });
+        }
+      }
+
       const initialObservation = await this.browser.observe();
       messages.push({
         role: 'user',
-        content: `Initial browser observation:\n${this.clip(reproduction ? JSON.stringify(reproduction.observation(initialObservation)) : initialObservation)}`,
+        content: `Initial browser observation:\n${this.clip(reproduction ? JSON.stringify(reproduction.observation(initialObservation)) : this.observe(initialObservation))}`,
       });
+
+      await supplyPatches(initialObservation);
+      if (this.knowledge)
+        messages.push({role: 'user', content: KNOWLEDGE_CAPTURE_CHECKPOINT});
 
       while (turns < maxTurns) {
         signal.throwIfAborted();
@@ -175,6 +275,17 @@ export class BrowserAgent {
           turns >= maxTurns - (input.verification ? 1 : 0) ||
           toolCalls >= maxToolCalls - (input.verification ? 2 : 1);
 
+        if (
+          this.knowledge &&
+          !knowledgeReported &&
+          !knowledgeReminderSent &&
+          !finishing &&
+          (turns >= maxTurns - 2 || toolCalls >= maxToolCalls - 3)
+        ) {
+          messages.push({role: 'user', content: KNOWLEDGE_CAPTURE_CHECKPOINT});
+          knowledgeReminderSent = true;
+        }
+
         if (finishing) {
           messages.push({
             role: 'user',
@@ -195,13 +306,16 @@ export class BrowserAgent {
 
         const response = await this.provider.complete(
           messages,
-          input.fixVerification
-            ? FIX_VERIFICATION_TOOLS
-            : input.verification
-              ? VERIFICATION_TOOLS
-              : reproduction
-                ? REPRODUCTION_TOOLS
-                : BROWSER_TOOLS,
+          [
+            ...(input.fixVerification
+              ? FIX_VERIFICATION_TOOLS
+              : input.verification
+                ? VERIFICATION_TOOLS
+                : reproduction
+                  ? REPRODUCTION_TOOLS
+                  : BROWSER_TOOLS),
+            ...(this.knowledge ? KNOWLEDGE_TOOLS : []),
+          ],
           signal,
           finishing ? 'finish' : undefined,
         );
@@ -286,6 +400,8 @@ export class BrowserAgent {
           continue;
         }
 
+        const routeObservations: string[] = [];
+
         for (const call of response.tool_calls) {
           signal.throwIfAborted();
 
@@ -306,10 +422,93 @@ export class BrowserAgent {
           let output: string;
 
           try {
-            const value = await tools.execute(
-              call.function.name,
-              call.function.arguments,
-            );
+            let value: BrowserToolOutput;
+            const args = call.function.arguments;
+
+            if (
+              this.knowledge &&
+              ['searchEnvironmentKnowledge', 'searchKnowledgePatches'].includes(
+                call.function.name,
+              )
+            ) {
+              value = {
+                knowledge: await this.knowledge({
+                  operation:
+                    call.function.name === 'searchKnowledgePatches'
+                      ? 'patches'
+                      : 'search',
+                  input: knowledgeSearchSchema.parse(JSON.parse(args)),
+                }),
+              };
+            } else if (
+              this.knowledge &&
+              call.function.name === 'proposeEnvironmentKnowledge'
+            ) {
+              const knowledgeInput = parseKnowledgeTool(
+                knowledgeCreateToolSchema,
+                args,
+              );
+              value = {
+                patch: await this.knowledge({
+                  operation: 'patch',
+                  input: {
+                    ...knowledgeInput,
+                    operation: 'create',
+                    requestId: requestId(call.function.name, knowledgeInput),
+                  },
+                }),
+              };
+              knowledgeReported = true;
+            } else if (
+              this.knowledge &&
+              call.function.name === 'patchEnvironmentKnowledge'
+            ) {
+              const knowledgeInput = parseKnowledgeTool(
+                knowledgeUpdateToolSchema,
+                args,
+              );
+              value = {
+                patch: await this.knowledge({
+                  operation: 'patch',
+                  input: {
+                    ...knowledgeInput,
+                    requestId: requestId(call.function.name, knowledgeInput),
+                  },
+                }),
+              };
+              knowledgeReported = true;
+            } else if (
+              this.knowledge &&
+              call.function.name === 'verifyKnowledgePatch'
+            ) {
+              const knowledgeInput = parseKnowledgeTool(
+                knowledgeVerifyToolSchema,
+                args,
+              );
+              const verification = (await this.knowledge({
+                operation: 'verification',
+                input: {
+                  ...knowledgeInput,
+                  requestId: requestId(call.function.name, knowledgeInput),
+                },
+              })) as KnowledgeVerificationSummary;
+              if (
+                !knowledgeVerifications.some(
+                  item => item.id === verification.id,
+                )
+              )
+                knowledgeVerifications.push(verification);
+              this.emit('agent.knowledge_verification', {...verification});
+              value = {verification};
+              knowledgeReported = true;
+            } else {
+              value = await tools.execute(call.function.name, args);
+            }
+
+            if (value.observation) routeObservations.push(value.observation);
+            if ('observation' in value && value.observation && !reproduction) {
+              value.observation = this.observe(value.observation);
+            }
             signal.throwIfAborted();
             output = this.clip(JSON.stringify(value));
             this.emit('agent.tool_completed', {
@@ -355,6 +554,9 @@ export class BrowserAgent {
 
           messages.push({role: 'tool', tool_call_id: call.id, content: output});
         }
+
+        for (const observation of routeObservations)
+          await supplyPatches(observation);
       }
 
       return conclude(
@@ -428,6 +630,15 @@ export class BrowserAgent {
     }
 
     signal.throwIfAborted();
+  }
+
+  private observe(observation: string): string {
+    if (!this.knowledge) return observation;
+
+    const sourceEventId = randomUUID();
+    this.emit('agent.evidence', {sourceEventId, observation});
+
+    return JSON.stringify({sourceEventId, observation});
   }
 
   private clip(value: string): string {

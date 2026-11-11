@@ -112,6 +112,9 @@ export const BROWSER_TOOLS: AgentTool[] = Object.entries(tools).map(
 );
 
 export interface BrowserToolOutput {
+  verification?: unknown;
+  knowledge?: unknown;
+  patch?: unknown;
   observation?: string;
   sourceEventId?: string;
   activity?: {kind: 'message' | 'observation'; text: string};

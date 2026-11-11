@@ -14,6 +14,7 @@ class ActivityTimeline extends StatelessWidget {
           (event) =>
               event.type == 'agent.activity' ||
               event.type == 'agent.summary' ||
+              event.type == 'agent.knowledge_verification' ||
               (event.type.startsWith('agent.tool_') &&
                   ![
                     'finish',
@@ -37,7 +38,9 @@ class ActivityTimeline extends StatelessWidget {
         final p = event.payload;
         final tool = event.type.startsWith('agent.tool_');
         final message = event.type == 'agent.summary' || p['kind'] == 'message';
-        final title = tool
+        final title = event.type == 'agent.knowledge_verification'
+            ? 'Knowledge patch · ${p['result']}'
+            : tool
             ? '${event.type == 'agent.tool_called'
                   ? 'Started'
                   : event.type == 'agent.tool_failed'
@@ -46,7 +49,11 @@ class ActivityTimeline extends StatelessWidget {
             : message
             ? 'Relay'
             : 'Observation';
-        final text = (p['text'] ?? '').toString();
+        final text =
+            (event.type == 'agent.knowledge_verification'
+                    ? p['reason']
+                    : p['text'] ?? '')
+                .toString();
         final details = (p['arguments'] ?? p['output'] ?? '').toString();
 
         return Container(

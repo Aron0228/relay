@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../session_service.dart';
 import 'workspace_api.dart';
+import 'environment_knowledge.dart';
 import 'workspace_environment_form.dart';
 import 'workspace_github_settings.dart';
 import 'workspace_side_panel.dart';
@@ -603,7 +604,7 @@ class _WorkspaceSettingsState extends State<WorkspaceSettings> {
 
   @override
   Widget build(BuildContext context) => DefaultTabController(
-    length: 4,
+    length: 5,
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -634,6 +635,7 @@ class _WorkspaceSettingsState extends State<WorkspaceSettings> {
             Tab(text: 'Members'),
             Tab(text: 'Environments'),
             Tab(text: 'GitHub'),
+            Tab(text: 'Knowledge'),
           ],
         ),
         const SizedBox(height: 12),
@@ -652,6 +654,13 @@ class _WorkspaceSettingsState extends State<WorkspaceSettings> {
                 Offstage(offstage: _tab != 0, child: _generalTab()),
                 Offstage(offstage: _tab != 1, child: _membersTab()),
                 Offstage(offstage: _tab != 2, child: _environmentsTab()),
+                if (_tab == 4)
+                  EnvironmentKnowledge(
+                    sessions: widget.sessions,
+                    workspaceId: widget.workspace!['id'] as String,
+                    environments: _environments,
+                    admin: _admin,
+                  ),
                 if (_tab == 3)
                   WorkspaceGithubSettings(
                     sessions: widget.sessions,

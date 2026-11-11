@@ -149,6 +149,15 @@ export class ActivityTimeline {
             text: String(p['text'] ?? ''),
           },
         ];
+      if (event.type === 'agent.knowledge_verification')
+        return [
+          {
+            ...base,
+            kind: 'observation',
+            title: `Knowledge patch · ${String(p['result'])}`,
+            text: String(p['reason'] ?? ''),
+          },
+        ];
       if (event.type === 'agent.summary')
         return [{ ...base, kind: 'message', title: 'Relay', text: String(p['text'] ?? '') }];
       if (
