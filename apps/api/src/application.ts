@@ -3,6 +3,11 @@ import {
   AuthenticationComponent,
   registerAuthenticationStrategy,
 } from '@loopback/authentication';
+import {
+  AuthorizationBindings,
+  AuthorizationComponent,
+  AuthorizationDecision,
+} from '@loopback/authorization';
 import {ApplicationConfig, CoreBindings} from '@loopback/core';
 import {
   RestExplorerBindings,
@@ -22,6 +27,12 @@ dotenv.config();
 
 import {PostgresDataSource} from './datasources/postgres.datasource';
 import {SessionStrategy} from './strategies';
+import {
+  IAM_AUTHORIZER_BINDING_KEY,
+  IAM_POLICY_ENGINE_BINDING_KEY,
+  IamAuthorizerProvider,
+  IamPolicyEngine,
+} from './authorization';
 
 export {ApplicationConfig};
 
@@ -45,6 +56,14 @@ export class RelayApplication extends BootMixin(
 
     this.component(AuthenticationComponent);
     registerAuthenticationStrategy(this, SessionStrategy);
+
+    this.configure(AuthorizationBindings.COMPONENT).to({
+      defaultDecision: AuthorizationDecision.DENY,
+      precedence: AuthorizationDecision.DENY,
+    });
+    this.component(AuthorizationComponent);
+    this.bind(IAM_POLICY_ENGINE_BINDING_KEY).to(new IamPolicyEngine());
+    this.bind(IAM_AUTHORIZER_BINDING_KEY).toProvider(IamAuthorizerProvider);
 
     // Set up default home page
     this.static('/', path.join(__dirname, '../public'));

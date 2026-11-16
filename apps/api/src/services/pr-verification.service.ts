@@ -27,7 +27,8 @@ import {
 import {Task, TASK_STATUS, RUN_STAGE} from '../models';
 import {GithubAppService} from './github-app.service';
 import {GithubConnectionService} from './github-connection.service';
-import {WorkspaceService} from './workspace.service';
+import {IAM_ACTION} from '../authorization/types';
+import {IamAuthorizationService} from './iam-authorization.service';
 import {
   WorkerService,
   WORKER_SERVICE_OPTIONS_BINDING_KEY,
@@ -83,7 +84,8 @@ export class PrVerificationService {
     @service(GithubAppService) private github: GithubAppService,
     @service(GithubConnectionService)
     private connections: GithubConnectionService,
-    @service(WorkspaceService) private workspaces: WorkspaceService,
+    @service(IamAuthorizationService)
+    private authorization: IamAuthorizationService,
     @service(WorkerService) private workers: WorkerService,
     @inject(WORKER_SERVICE_OPTIONS_BINDING_KEY, {optional: true})
     private options: WorkerServiceOptions = {},
@@ -154,7 +156,11 @@ export class PrVerificationService {
 
     if (!installation)
       throw new HttpErrors.NotFound('GitHub installation is not connected');
-    await this.workspaces.requireMember(installation.workspaceId, user.id);
+    await this.authorization.workspace(
+      installation.workspaceId,
+      user.id,
+      IAM_ACTION.RunCreate,
+    );
     const repo = await this.repositories.findOne({
       where: {
         githubId: payload.repository.id,
@@ -238,10 +244,10 @@ export class PrVerificationService {
         [installation.workspaceId],
         options,
       );
-      await this.workspaces.requireMember(
+      await this.authorization.workspace(
         installation.workspaceId,
         user.id,
-        false,
+        IAM_ACTION.RunCreate,
         transaction,
       );
       const active = await this.repositories.findOne(

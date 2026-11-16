@@ -1,3 +1,4 @@
+import {authorizeIam, IAM_ACTION, IAM_RESOURCE_TYPE} from '../authorization';
 import {authenticate} from '@loopback/authentication';
 import {inject, service} from '@loopback/core';
 import {get, param, patch, requestBody, HttpErrors} from '@loopback/rest';
@@ -12,6 +13,7 @@ export class EnvironmentKnowledgeController {
     private knowledge: EnvironmentKnowledgeService,
   ) {}
 
+  @authorizeIam(IAM_ACTION.WorkspaceRead, IAM_RESOURCE_TYPE.Workspace)
   @get('/api/workspaces/{workspaceId}/environments/{environmentId}/knowledge')
   list(
     @param.path.string('workspaceId', {schema: {format: 'uuid'}})
@@ -43,6 +45,7 @@ export class EnvironmentKnowledgeController {
     );
   }
 
+  @authorizeIam(IAM_ACTION.WorkspaceRead, IAM_RESOURCE_TYPE.Workspace)
   @get(
     '/api/workspaces/{workspaceId}/environments/{environmentId}/knowledge-patches',
   )
@@ -75,6 +78,7 @@ export class EnvironmentKnowledgeController {
     );
   }
 
+  @authorizeIam(IAM_ACTION.WorkspaceRead, IAM_RESOURCE_TYPE.Workspace)
   @get(
     '/api/workspaces/{workspaceId}/environments/{environmentId}/knowledge/{id}',
   )
@@ -94,6 +98,7 @@ export class EnvironmentKnowledgeController {
     );
   }
 
+  @authorizeIam(IAM_ACTION.WorkspaceManage, IAM_RESOURCE_TYPE.Workspace)
   @patch(
     '/api/workspaces/{workspaceId}/environments/{environmentId}/knowledge-patches/{id}',
   )
@@ -120,6 +125,7 @@ export class EnvironmentKnowledgeController {
     );
   }
 
+  @authorizeIam(IAM_ACTION.WorkspaceRead, IAM_RESOURCE_TYPE.Workspace)
   @get(
     '/api/workspaces/{workspaceId}/environments/{environmentId}/knowledge-patches/{id}',
   )
@@ -142,6 +148,7 @@ export class EnvironmentKnowledgeController {
     );
   }
 
+  @authorizeIam(IAM_ACTION.WorkspaceRead, IAM_RESOURCE_TYPE.Workspace)
   @get(
     '/api/workspaces/{workspaceId}/environments/{environmentId}/knowledge-patches/{patchId}/verifications/{id}',
   )
@@ -163,6 +170,7 @@ export class EnvironmentKnowledgeController {
     );
   }
 
+  @authorizeIam(IAM_ACTION.WorkspaceRead, IAM_RESOURCE_TYPE.Workspace)
   @get('/api/workspaces/{workspaceId}/runs/{id}/knowledge-patches')
   runPatches(
     @param.path.string('workspaceId', {schema: {format: 'uuid'}})
@@ -173,6 +181,7 @@ export class EnvironmentKnowledgeController {
     return this.knowledge.runPatches(workspaceId, id, user[securityId]);
   }
 
+  @authorizeIam(IAM_ACTION.WorkspaceRead, IAM_RESOURCE_TYPE.Workspace)
   @get('/api/workspaces/{workspaceId}/runs/{id}/knowledge')
   usage(
     @param.path.string('workspaceId', {schema: {format: 'uuid'}})

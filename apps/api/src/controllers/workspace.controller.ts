@@ -1,3 +1,10 @@
+import {
+  authorizeIam,
+  IAM_ACTION,
+  IAM_AUTHORIZER_BINDING_KEY,
+  IAM_RESOURCE_TYPE,
+} from '../authorization';
+import {authorize} from '@loopback/authorization';
 import {authenticate} from '@loopback/authentication';
 import {inject, service} from '@loopback/core';
 import {
@@ -50,11 +57,13 @@ export class WorkspaceController {
     @inject(RestBindings.Http.RESPONSE) private response: Response,
   ) {}
 
+  @authorizeIam(IAM_ACTION.WorkspaceList, IAM_RESOURCE_TYPE.User)
   @get('/api/workspaces')
   list(@inject(SecurityBindings.USER) user: UserProfile) {
     return this.workspaces.list(user[securityId]);
   }
 
+  @authorizeIam(IAM_ACTION.WorkspaceCreate, IAM_RESOURCE_TYPE.User)
   @post('/api/workspaces')
   create(
     @inject(SecurityBindings.USER) user: UserProfile,
@@ -65,6 +74,7 @@ export class WorkspaceController {
     return this.workspaces.create(user[securityId], data.name);
   }
 
+  @authorizeIam(IAM_ACTION.WorkspaceUpdate, IAM_RESOURCE_TYPE.Workspace)
   @post('/api/workspaces/{id}/avatar')
   async uploadAvatar(
     @param.path.string('id', {schema: {format: 'uuid'}}) id: string,
@@ -79,7 +89,6 @@ export class WorkspaceController {
     })
     body: Buffer,
   ) {
-    await this.workspaces.requireMember(id, user[securityId], true);
     const filename = await this.avatars.store(body);
     const avatarUrl = `/api/workspaces/${id}/avatar/${filename}`;
     let previous: string | null | undefined;
@@ -100,6 +109,7 @@ export class WorkspaceController {
     return {avatarUrl};
   }
 
+  @authorizeIam(IAM_ACTION.WorkspaceUpdate, IAM_RESOURCE_TYPE.Workspace)
   @del('/api/workspaces/{id}/avatar')
   async deleteAvatar(
     @param.path.string('id', {schema: {format: 'uuid'}}) id: string,
@@ -114,6 +124,7 @@ export class WorkspaceController {
     await this.removePreviousAvatar(id, previous);
   }
 
+  @authorizeIam(IAM_ACTION.WorkspaceRead, IAM_RESOURCE_TYPE.Workspace)
   @get('/api/workspaces/{id}/avatar/{filename}')
   async avatar(
     @param.path.string('id', {schema: {format: 'uuid'}}) id: string,
@@ -145,6 +156,11 @@ export class WorkspaceController {
       await this.avatars.remove(url.slice(prefix.length));
   }
 
+  @authorize({
+    voters: [IAM_AUTHORIZER_BINDING_KEY],
+    resource: IAM_RESOURCE_TYPE.Workspace,
+    scopes: [IAM_ACTION.WorkspaceRead],
+  })
   @get('/api/workspaces/{id}')
   get(
     @param.path.string('id', {schema: {format: 'uuid'}}) id: string,
@@ -153,6 +169,7 @@ export class WorkspaceController {
     return this.workspaces.requireMember(id, user[securityId]);
   }
 
+  @authorizeIam(IAM_ACTION.WorkspaceUpdate, IAM_RESOURCE_TYPE.Workspace)
   @patch('/api/workspaces/{id}')
   update(
     @param.path.string('id', {schema: {format: 'uuid'}}) id: string,
@@ -166,6 +183,7 @@ export class WorkspaceController {
     );
   }
 
+  @authorizeIam(IAM_ACTION.WorkspaceDelete, IAM_RESOURCE_TYPE.Workspace)
   @del('/api/workspaces/{id}')
   async remove(
     @param.path.string('id', {schema: {format: 'uuid'}}) id: string,
@@ -174,6 +192,7 @@ export class WorkspaceController {
     await this.workspaces.remove(id, user[securityId]);
   }
 
+  @authorizeIam(IAM_ACTION.WorkspaceRead, IAM_RESOURCE_TYPE.Workspace)
   @get('/api/workspaces/{id}/members')
   members(
     @param.path.string('id', {schema: {format: 'uuid'}}) id: string,
@@ -182,6 +201,7 @@ export class WorkspaceController {
     return this.workspaces.listMembers(id, user[securityId]);
   }
 
+  @authorizeIam(IAM_ACTION.MembersManage, IAM_RESOURCE_TYPE.Workspace)
   @patch('/api/workspaces/{id}/members/{userId}')
   async role(
     @param.path.string('id', {schema: {format: 'uuid'}}) id: string,
@@ -206,6 +226,7 @@ export class WorkspaceController {
     await this.workspaces.changeMember(id, user[securityId], userId, data.role);
   }
 
+  @authorizeIam(IAM_ACTION.WorkspaceRead, IAM_RESOURCE_TYPE.Workspace)
   @del('/api/workspaces/{id}/members/{userId}')
   async removeMember(
     @param.path.string('id', {schema: {format: 'uuid'}}) id: string,
@@ -215,11 +236,13 @@ export class WorkspaceController {
     await this.workspaces.changeMember(id, user[securityId], userId);
   }
 
+  @authorizeIam(IAM_ACTION.InvitationList, IAM_RESOURCE_TYPE.User)
   @get('/api/workspace-invitations')
   invitations(@inject(SecurityBindings.USER) user: UserProfile) {
     return this.workspaces.listInvitations(user[securityId]);
   }
 
+  @authorizeIam(IAM_ACTION.InvitationsManage, IAM_RESOURCE_TYPE.Workspace)
   @get('/api/workspaces/{id}/invitations')
   sentInvitations(
     @param.path.string('id', {schema: {format: 'uuid'}}) id: string,
@@ -228,6 +251,7 @@ export class WorkspaceController {
     return this.workspaces.workspaceInvitations(id, user[securityId]);
   }
 
+  @authorizeIam(IAM_ACTION.InvitationsManage, IAM_RESOURCE_TYPE.Workspace)
   @post('/api/workspaces/{id}/invitations')
   invite(
     @param.path.string('id', {schema: {format: 'uuid'}}) id: string,
@@ -244,6 +268,7 @@ export class WorkspaceController {
     return this.workspaces.invite(id, user[securityId], data.email);
   }
 
+  @authorizeIam(IAM_ACTION.InvitationRespond, IAM_RESOURCE_TYPE.Invitation)
   @post('/api/workspace-invitations/{id}/response')
   async respond(
     @param.path.string('id', {schema: {format: 'uuid'}}) id: string,
@@ -255,6 +280,7 @@ export class WorkspaceController {
     await this.workspaces.respond(id, user[securityId], data.accept);
   }
 
+  @authorizeIam(IAM_ACTION.InvitationsManage, IAM_RESOURCE_TYPE.Workspace)
   @del('/api/workspaces/{id}/invitations/{invitationId}')
   async revoke(
     @param.path.string('id', {schema: {format: 'uuid'}}) id: string,
@@ -265,6 +291,7 @@ export class WorkspaceController {
     await this.workspaces.revoke(id, user[securityId], invitationId);
   }
 
+  @authorizeIam(IAM_ACTION.WorkspaceRead, IAM_RESOURCE_TYPE.Workspace)
   @get('/api/workspaces/{id}/environments')
   environments(
     @param.path.string('id', {schema: {format: 'uuid'}}) id: string,
@@ -273,6 +300,7 @@ export class WorkspaceController {
     return this.workspaces.listEnvironments(id, user[securityId]);
   }
 
+  @authorizeIam(IAM_ACTION.EnvironmentsManage, IAM_RESOURCE_TYPE.Workspace)
   @post('/api/workspaces/{id}/environments')
   createEnvironment(
     @param.path.string('id', {schema: {format: 'uuid'}}) id: string,
@@ -286,6 +314,7 @@ export class WorkspaceController {
     );
   }
 
+  @authorizeIam(IAM_ACTION.EnvironmentsManage, IAM_RESOURCE_TYPE.Workspace)
   @patch('/api/workspaces/{id}/environments/{environmentId}')
   updateEnvironment(
     @param.path.string('id', {schema: {format: 'uuid'}}) id: string,
@@ -302,6 +331,7 @@ export class WorkspaceController {
     );
   }
 
+  @authorizeIam(IAM_ACTION.EnvironmentsManage, IAM_RESOURCE_TYPE.Workspace)
   @del('/api/workspaces/{id}/environments/{environmentId}')
   async removeEnvironment(
     @param.path.string('id', {schema: {format: 'uuid'}}) id: string,

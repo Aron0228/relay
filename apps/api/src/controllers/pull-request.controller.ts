@@ -1,3 +1,4 @@
+import {authorizeIam, IAM_ACTION, IAM_RESOURCE_TYPE} from '../authorization';
 import {authenticate} from '@loopback/authentication';
 import {inject, service} from '@loopback/core';
 import {get, param, Response, RestBindings} from '@loopback/rest';
@@ -11,6 +12,7 @@ export class PullRequestController {
     @inject(RestBindings.Http.RESPONSE) private response: Response,
   ) {}
 
+  @authorizeIam(IAM_ACTION.PullRequestsList, IAM_RESOURCE_TYPE.Workspace)
   @get('/api/pull-requests')
   async list(
     @inject(SecurityBindings.USER) user: UserProfile,
@@ -33,6 +35,7 @@ export class PullRequestController {
     );
   }
 
+  @authorizeIam(IAM_ACTION.PullRequestRead, IAM_RESOURCE_TYPE.PullRequest)
   @get('/api/pull-requests/{id}')
   async get(
     @inject(SecurityBindings.USER) user: UserProfile,

@@ -1,3 +1,4 @@
+import {authorizeIam, IAM_ACTION, IAM_RESOURCE_TYPE} from '../authorization';
 import {authenticate} from '@loopback/authentication';
 import {inject, service} from '@loopback/core';
 import {get, param, post, Response, RestBindings} from '@loopback/rest';
@@ -12,6 +13,7 @@ export class IssueController {
     @inject(RestBindings.Http.RESPONSE) private response: Response,
   ) {}
 
+  @authorizeIam(IAM_ACTION.IssuesList, IAM_RESOURCE_TYPE.Workspace)
   @get('/api/issues')
   async list(
     @inject(SecurityBindings.USER) user: UserProfile,
@@ -28,6 +30,7 @@ export class IssueController {
     return this.issues.list(workspaceId, user[securityId], search, before);
   }
 
+  @authorizeIam(IAM_ACTION.IssueRead, IAM_RESOURCE_TYPE.Issue)
   @get('/api/issues/{id}')
   async get(
     @inject(SecurityBindings.USER) user: UserProfile,
@@ -38,12 +41,11 @@ export class IssueController {
     return this.issues.get(id, user[securityId], taskId);
   }
 
+  @authorizeIam(IAM_ACTION.TaskCancel, IAM_RESOURCE_TYPE.Task)
   @post('/api/tasks/{id}/cancel')
   async cancel(
-    @inject(SecurityBindings.USER) user: UserProfile,
     @param.path.string('id', {schema: {format: 'uuid'}}) id: string,
   ): Promise<void> {
-    await this.issues.authorizeTask(id, user[securityId]);
     await this.workers.cancelTask(id);
     this.response.status(204);
   }

@@ -1,3 +1,5 @@
+import {IAM_ACTION, IAM_RESOURCE_TYPE} from '../authorization/types';
+import {IamAuthorizationService} from './iam-authorization.service';
 import {EnvironmentKnowledgeService} from './environment-knowledge.service';
 import {BindingScope, inject, lifeCycleObserver, service} from '@loopback/core';
 import {IsolationLevel, repository} from '@loopback/repository';
@@ -103,6 +105,8 @@ export class WorkerService {
     @service(GithubConnectionService)
     private githubConnections: GithubConnectionService,
     @service(WorkerCapacityService) private capacity: WorkerCapacityService,
+    @service(IamAuthorizationService)
+    private authorization: IamAuthorizationService,
     @inject(WORKER_SERVICE_OPTIONS_BINDING_KEY, {optional: true})
     private options: WorkerServiceOptions = {},
     @service(EnvironmentKnowledgeService)
@@ -134,6 +138,19 @@ export class WorkerService {
     agentInput?: AgentInput,
     context?: {workspaceId: string; environmentId: string},
   ): Promise<{run: Run; viewToken: string}> {
+    if (context) {
+      if (!userId)
+        throw new HttpErrors.Unauthorized(
+          'A user is required for workspace runs',
+        );
+
+      await this.authorization.workspace(
+        context.workspaceId,
+        userId,
+        IAM_ACTION.RunCreate,
+      );
+    }
+
     if (this.stopping) {
       throw new HttpErrors.ServiceUnavailable(
         'Worker infrastructure is stopping',
@@ -228,6 +245,12 @@ export class WorkerService {
     limit = 25,
     workspaceId?: string,
   ) {
+    await this.authorization.assert(userId, IAM_ACTION.RunList, {
+      type: IAM_RESOURCE_TYPE.User,
+      id: userId,
+    });
+    if (workspaceId) await this.authorization.workspace(workspaceId, userId);
+
     const cursor = before ? await this.getOwned(before, userId) : undefined;
 
     if (
@@ -270,23 +293,14 @@ export class WorkerService {
 
   async getOwned(id: string, userId: string): Promise<Run> {
     const run = await this.runs.findOne({where: {id}});
-    const memberships = run?.workspaceId
-      ? ((await this.runs.execute(
-          'SELECT m.id FROM auth.workspace_member m JOIN auth.workspace w ON w.id = m.workspace_id WHERE m.workspace_id = $1 AND m.user_id = $2 AND w.deleted_at IS NULL',
-          [run.workspaceId, userId],
-        )) as {id: string}[])
-      : [];
-
-    if (
-      run &&
-      (run.workspaceId ? !memberships.length : run.userId !== userId)
-    ) {
-      throw new HttpErrors.NotFound('Run not found');
-    }
-
     if (!run) {
       throw new HttpErrors.NotFound('Run not found');
     }
+
+    await this.authorization.assert(userId, IAM_ACTION.RunRead, {
+      type: IAM_RESOURCE_TYPE.Run,
+      id,
+    });
 
     return run;
   }
