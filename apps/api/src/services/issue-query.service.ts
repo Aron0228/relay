@@ -1,3 +1,5 @@
+import {IAM_ACTION, IAM_RESOURCE_TYPE} from '../authorization';
+import {IamAuthorizationService} from './iam-authorization.service';
 import {BindingScope, injectable, service} from '@loopback/core';
 import {repository} from '@loopback/repository';
 import {HttpErrors} from '@loopback/rest';
@@ -10,7 +12,6 @@ import {
   RunResultRepository,
   TaskRepository,
 } from '../repositories';
-import {WorkspaceService} from './workspace.service';
 
 export const ISSUE_QUERY_SERVICE_BINDING_KEY = 'services.IssueQueryService';
 
@@ -23,7 +24,8 @@ export class IssueQueryService {
     @repository(TaskRepository) private tasks: TaskRepository,
     @repository(RunRepository) private runs: RunRepository,
     @repository(RunResultRepository) private results: RunResultRepository,
-    @service(WorkspaceService) private workspaces: WorkspaceService,
+    @service(IamAuthorizationService)
+    private authorization: IamAuthorizationService,
     @repository(GithubPullRequestRepository)
     private pullRequests?: GithubPullRequestRepository,
     @repository(PrContextRepository) private contexts?: PrContextRepository,
@@ -36,7 +38,11 @@ export class IssueQueryService {
     before?: string,
     pullRequest = false,
   ) {
-    await this.workspaces.requireMember(workspaceId, userId);
+    await this.authorization.workspace(
+      workspaceId,
+      userId,
+      pullRequest ? IAM_ACTION.PullRequestsList : IAM_ACTION.IssuesList,
+    );
     const cursor = before
       ? await this.get(before, userId, undefined, pullRequest)
       : undefined;
@@ -67,6 +73,16 @@ export class IssueQueryService {
   }
 
   async get(id: string, userId: string, taskId?: string, pullRequest = false) {
+    await this.authorization.assert(
+      userId,
+      pullRequest ? IAM_ACTION.PullRequestRead : IAM_ACTION.IssueRead,
+      {
+        type: pullRequest
+          ? IAM_RESOURCE_TYPE.PullRequest
+          : IAM_RESOURCE_TYPE.Issue,
+        id,
+      },
+    );
     const issue = pullRequest
       ? await this.pullRequests!.findById(id)
       : await this.issues.findById(id);
@@ -74,7 +90,6 @@ export class IssueQueryService {
     const linkedRepository = await this.repositories.findById(
       issue.repositoryId,
     );
-    await this.workspaces.requireMember(linkedRepository.workspaceId, userId);
     const tasks = await this.tasks.find({
       where: {...source, workspaceId: linkedRepository.workspaceId},
       order: ['createdAt DESC', 'id DESC'],
@@ -165,12 +180,6 @@ export class IssueQueryService {
         runs: publicRuns.filter(run => run.taskId === investigation.id),
       })),
     };
-  }
-
-  async authorizeTask(id: string, userId: string) {
-    const task = await this.tasks.findById(id);
-    await this.workspaces.requireMember(task.workspaceId, userId);
-    return task;
   }
 
   private publicTask(task: Awaited<ReturnType<TaskRepository['findById']>>) {

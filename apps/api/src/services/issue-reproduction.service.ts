@@ -27,7 +27,8 @@ import {
 import {WORKER_SCRIPT} from '../workers/protocol';
 import {GithubAppService} from './github-app.service';
 import {GithubConnectionService} from './github-connection.service';
-import {WorkspaceService} from './workspace.service';
+import {IAM_ACTION} from '../authorization/types';
+import {IamAuthorizationService} from './iam-authorization.service';
 import {WorkerService} from './worker.service';
 import {
   PrVerificationService,
@@ -87,7 +88,8 @@ export class IssueReproductionService {
     @service(GithubAppService) private github: GithubAppService,
     @service(GithubConnectionService)
     private connections: GithubConnectionService,
-    @service(WorkspaceService) private workspaces: WorkspaceService,
+    @service(IamAuthorizationService)
+    private authorization: IamAuthorizationService,
     @service(WorkerService) private workers: WorkerService,
     @inject(ISSUE_REPRODUCTION_OPTIONS_BINDING_KEY, {optional: true})
     private options: IssueReproductionOptions = {},
@@ -321,7 +323,11 @@ export class IssueReproductionService {
     if (!installation)
       throw new HttpErrors.NotFound('GitHub installation is not connected');
 
-    await this.workspaces.requireMember(installation.workspaceId, user.id);
+    await this.authorization.workspace(
+      installation.workspaceId,
+      user.id,
+      IAM_ACTION.RunCreate,
+    );
     const linkedRepository = await this.repositories.findOne({
       where: {
         githubId: payload.repository.id,
@@ -360,10 +366,10 @@ export class IssueReproductionService {
         [installation.workspaceId],
         options,
       );
-      await this.workspaces.requireMember(
+      await this.authorization.workspace(
         installation.workspaceId,
         user.id,
-        false,
+        IAM_ACTION.RunCreate,
         transaction,
       );
       const current = await this.repositories.findOne(

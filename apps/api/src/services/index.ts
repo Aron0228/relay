@@ -21,3 +21,4 @@ export * from './pr-verification.service';
 export * from './github-command-reply.service';
 export * from './environment-knowledge.service';
 export * from './knowledge-patch.service';
+export * from './iam-authorization.service';

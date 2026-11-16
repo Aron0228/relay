@@ -1,3 +1,4 @@
+import {authorizeIam, IAM_ACTION, IAM_RESOURCE_TYPE} from '../authorization';
 import {authenticate} from '@loopback/authentication';
 import {inject, service} from '@loopback/core';
 import {
@@ -34,6 +35,7 @@ export class GithubConnectionController {
     @inject(RestBindings.Http.RESPONSE) private response: Response,
   ) {}
 
+  @authorizeIam(IAM_ACTION.WorkspaceRead, IAM_RESOURCE_TYPE.Workspace)
   @get('/api/workspaces/{id}/github')
   list(
     @param.path.string('id', {schema: {format: 'uuid'}}) id: string,
@@ -42,6 +44,7 @@ export class GithubConnectionController {
     return this.connections.list(id, user[securityId]);
   }
 
+  @authorizeIam(IAM_ACTION.WorkspaceManage, IAM_RESOURCE_TYPE.Workspace)
   @get('/api/workspaces/{id}/github/installation-url')
   installationUrl(
     @param.path.string('id', {schema: {format: 'uuid'}}) id: string,
@@ -52,6 +55,7 @@ export class GithubConnectionController {
     return this.connections.installationUrl(id, user[securityId]);
   }
 
+  @authorizeIam(IAM_ACTION.WorkspaceManage, IAM_RESOURCE_TYPE.Workspace)
   @get(
     '/api/workspaces/{id}/github/installations/{installationId}/settings-url',
   )
@@ -68,6 +72,7 @@ export class GithubConnectionController {
     );
   }
 
+  @authorizeIam(IAM_ACTION.WorkspaceManage, IAM_RESOURCE_TYPE.Workspace)
   @get('/api/workspaces/{id}/github/available-installations')
   available(
     @param.path.string('id', {schema: {format: 'uuid'}}) id: string,
@@ -76,6 +81,7 @@ export class GithubConnectionController {
     return this.connections.available(id, user[securityId]);
   }
 
+  @authorizeIam(IAM_ACTION.WorkspaceManage, IAM_RESOURCE_TYPE.Workspace)
   @post('/api/workspaces/{id}/github/installations')
   connect(
     @param.path.string('id', {schema: {format: 'uuid'}}) id: string,
@@ -87,6 +93,7 @@ export class GithubConnectionController {
     return this.connections.connect(id, user[securityId], data.githubId);
   }
 
+  @authorizeIam(IAM_ACTION.WorkspaceManage, IAM_RESOURCE_TYPE.Workspace)
   @get(
     '/api/workspaces/{id}/github/installations/{installationId}/repositories',
   )
@@ -103,6 +110,7 @@ export class GithubConnectionController {
     );
   }
 
+  @authorizeIam(IAM_ACTION.WorkspaceManage, IAM_RESOURCE_TYPE.Workspace)
   @post('/api/workspaces/{id}/github/repositories')
   save(
     @param.path.string('id', {schema: {format: 'uuid'}}) id: string,
@@ -129,6 +137,7 @@ export class GithubConnectionController {
     );
   }
 
+  @authorizeIam(IAM_ACTION.WorkspaceManage, IAM_RESOURCE_TYPE.Workspace)
   @del('/api/workspaces/{id}/github/installations/{installationId}')
   async disconnect(
     @param.path.string('id', {schema: {format: 'uuid'}}) id: string,
@@ -144,6 +153,7 @@ export class GithubConnectionController {
     );
   }
 
+  @authorizeIam(IAM_ACTION.WorkspaceManage, IAM_RESOURCE_TYPE.Workspace)
   @del('/api/workspaces/{id}/github/repositories/{repositoryId}')
   async remove(
     @param.path.string('id', {schema: {format: 'uuid'}}) id: string,

@@ -1,6 +1,8 @@
-import {BindingScope, injectable} from '@loopback/core';
+import {BindingScope, injectable, service} from '@loopback/core';
 import {IsolationLevel, repository, Transaction} from '@loopback/repository';
 import {HttpErrors} from '@loopback/rest';
+import {IAM_ACTION, IAM_RESOURCE_TYPE} from '../authorization/types';
+import {IamAuthorizationService} from './iam-authorization.service';
 import {allowedOrigins, approvedUrl} from '../ai/config';
 import {
   environmentTarget,
@@ -28,9 +30,15 @@ export class WorkspaceService {
     @repository(EnvironmentRepository)
     private environments: EnvironmentRepository,
     @repository(UserRepository) private users: UserRepository,
+    @service(IamAuthorizationService)
+    private authorization: IamAuthorizationService,
   ) {}
 
   async list(userId: string) {
+    await this.authorization.assert(userId, IAM_ACTION.WorkspaceList, {
+      type: IAM_RESOURCE_TYPE.User,
+      id: userId,
+    });
     const memberships = await this.members.find({where: {userId}});
     const workspaces = await this.workspaces.find({
       where: {
@@ -60,30 +68,20 @@ export class WorkspaceService {
     admin = false,
     transaction?: Transaction,
   ) {
-    const options = {transaction};
-    const workspace = await this.workspaces.findOne(
-      {where: {id: workspaceId, deletedAt: {eq: null as unknown as Date}}},
-      options,
+    return this.authorization.workspace(
+      workspaceId,
+      userId,
+      admin ? IAM_ACTION.WorkspaceManage : IAM_ACTION.WorkspaceRead,
+      transaction,
     );
-    const member = await this.members.findOne(
-      {where: {workspaceId, userId}},
-      options,
-    );
-
-    if (!workspace || !member)
-      throw new HttpErrors.NotFound('Workspace not found');
-    if (admin && member.role !== 'admin')
-      throw new HttpErrors.Forbidden('Workspace admin access is required');
-
-    return {
-      ...workspace.toJSON(),
-      createdBy: workspace.createdBy,
-      isOwner: workspace.createdBy === userId,
-      role: member.role,
-    };
   }
 
   async create(userId: string, name: string, avatarUrl?: string | null) {
+    await this.authorization.assert(userId, IAM_ACTION.WorkspaceCreate, {
+      type: IAM_RESOURCE_TYPE.User,
+      id: userId,
+    });
+
     const transaction = await this.workspaces.beginTransaction(
       IsolationLevel.READ_COMMITTED,
     );
@@ -143,7 +141,12 @@ export class WorkspaceService {
     data: Pick<Partial<Workspace>, 'name' | 'avatarUrl'>,
   ) {
     return this.locked(workspaceId, async transaction => {
-      await this.requireMember(workspaceId, userId, true, transaction);
+      await this.authorization.workspace(
+        workspaceId,
+        userId,
+        IAM_ACTION.WorkspaceUpdate,
+        transaction,
+      );
       await this.workspaces.updateById(
         workspaceId,
         {
@@ -168,7 +171,12 @@ export class WorkspaceService {
     avatarUrl: string | null,
   ) {
     return this.locked(workspaceId, async transaction => {
-      await this.requireMember(workspaceId, userId, true, transaction);
+      await this.authorization.workspace(
+        workspaceId,
+        userId,
+        IAM_ACTION.WorkspaceUpdate,
+        transaction,
+      );
       const workspace = await this.workspaces.findById(workspaceId, undefined, {
         transaction,
       });
@@ -186,7 +194,12 @@ export class WorkspaceService {
 
   async remove(workspaceId: string, userId: string) {
     await this.locked(workspaceId, async transaction => {
-      await this.requireMember(workspaceId, userId, true, transaction);
+      await this.authorization.workspace(
+        workspaceId,
+        userId,
+        IAM_ACTION.WorkspaceDelete,
+        transaction,
+      );
       await this.workspaces.updateById(
         workspaceId,
         {deletedAt: new Date(), updatedAt: new Date()},
@@ -221,10 +234,12 @@ export class WorkspaceService {
     role?: WorkspaceRole,
   ) {
     await this.locked(workspaceId, async transaction => {
-      const workspace = await this.requireMember(
+      const workspace = await this.authorization.workspace(
         workspaceId,
         actorId,
-        role !== undefined || actorId !== userId,
+        role !== undefined || actorId !== userId
+          ? IAM_ACTION.MembersManage
+          : IAM_ACTION.WorkspaceRead,
         transaction,
       );
       const member = await this.members.findOne(
@@ -258,6 +273,10 @@ export class WorkspaceService {
   }
 
   async listInvitations(userId: string) {
+    await this.authorization.assert(userId, IAM_ACTION.InvitationList, {
+      type: IAM_RESOURCE_TYPE.User,
+      id: userId,
+    });
     const user = await this.users.findById(userId);
     const invitations = await this.invitations.find({
       where: {email: {inq: user.verifiedEmails ?? []}},
@@ -283,7 +302,11 @@ export class WorkspaceService {
   }
 
   async workspaceInvitations(workspaceId: string, userId: string) {
-    await this.requireMember(workspaceId, userId, true);
+    await this.authorization.workspace(
+      workspaceId,
+      userId,
+      IAM_ACTION.InvitationsManage,
+    );
 
     return this.invitations.find({
       where: {workspaceId},
@@ -293,7 +316,12 @@ export class WorkspaceService {
 
   async invite(workspaceId: string, userId: string, email: string) {
     return this.locked(workspaceId, async transaction => {
-      await this.requireMember(workspaceId, userId, true, transaction);
+      await this.authorization.workspace(
+        workspaceId,
+        userId,
+        IAM_ACTION.InvitationsManage,
+        transaction,
+      );
       const normalized = email.trim().toLowerCase();
       const existing = await this.invitations.findOne(
         {where: {workspaceId, email: normalized}},
@@ -317,27 +345,15 @@ export class WorkspaceService {
     if (!invitation) throw new HttpErrors.NotFound('Invitation not found');
 
     await this.locked(invitation.workspaceId, async transaction => {
-      const current = await this.invitations.findOne(
-        {where: {id: invitationId}},
-        {transaction},
+      await this.authorization.invitation(
+        invitationId,
+        userId,
+        IAM_ACTION.InvitationRespond,
+        transaction,
       );
-      const user = await this.users.findById(userId, undefined, {transaction});
-      const workspace = await this.workspaces.findOne(
-        {
-          where: {
-            id: invitation.workspaceId,
-            deletedAt: {eq: null as unknown as Date},
-          },
-        },
-        {transaction},
-      );
-
-      if (
-        !current ||
-        !workspace ||
-        !user.verifiedEmails?.includes(current.email)
-      )
-        throw new HttpErrors.NotFound('Invitation not found');
+      const current = await this.invitations.findById(invitationId, undefined, {
+        transaction,
+      });
 
       if (accept) {
         const member = await this.members.findOne(
@@ -358,7 +374,12 @@ export class WorkspaceService {
 
   async revoke(workspaceId: string, userId: string, invitationId: string) {
     await this.locked(workspaceId, async transaction => {
-      await this.requireMember(workspaceId, userId, true, transaction);
+      await this.authorization.workspace(
+        workspaceId,
+        userId,
+        IAM_ACTION.InvitationsManage,
+        transaction,
+      );
       await this.invitations.deleteAll(
         {id: invitationId, workspaceId},
         {transaction},
@@ -438,7 +459,12 @@ export class WorkspaceService {
     }
 
     return this.locked(workspaceId, async transaction => {
-      await this.requireMember(workspaceId, userId, true, transaction);
+      await this.authorization.workspace(
+        workspaceId,
+        userId,
+        IAM_ACTION.EnvironmentsManage,
+        transaction,
+      );
       const options = {transaction};
       const existing = id
         ? await this.environments.findOne(
@@ -520,7 +546,12 @@ export class WorkspaceService {
 
   async removeEnvironment(workspaceId: string, userId: string, id: string) {
     await this.locked(workspaceId, async transaction => {
-      await this.requireMember(workspaceId, userId, true, transaction);
+      await this.authorization.workspace(
+        workspaceId,
+        userId,
+        IAM_ACTION.EnvironmentsManage,
+        transaction,
+      );
       const defaults = (await this.environments.execute(
         'SELECT id FROM github.repository WHERE workspace_id = $1 AND default_environment_id = $2 AND disconnected_at IS NULL',
         [workspaceId, id],

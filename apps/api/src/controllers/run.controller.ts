@@ -1,3 +1,4 @@
+import {authorizeIam, IAM_ACTION, IAM_RESOURCE_TYPE} from '../authorization';
 import {authenticate} from '@loopback/authentication';
 import {inject, service} from '@loopback/core';
 import {
@@ -21,6 +22,7 @@ export class RunController {
     @inject(RestBindings.Http.RESPONSE) private response: Response,
   ) {}
 
+  @authorizeIam(IAM_ACTION.RunList, IAM_RESOURCE_TYPE.User)
   @get('/api/runs')
   @authenticate('session')
   async list(
@@ -54,6 +56,7 @@ export class RunController {
     return {...page, items: page.items.map(run => this.publicRun(run))};
   }
 
+  @authorizeIam(IAM_ACTION.RunRead, IAM_RESOURCE_TYPE.Run)
   @get('/api/runs/{id}/media/stream')
   @authenticate('session')
   async ownedStream(
@@ -72,6 +75,7 @@ export class RunController {
     return this.response;
   }
 
+  @authorizeIam(IAM_ACTION.RunRead, IAM_RESOURCE_TYPE.Run)
   @get('/api/runs/{id}/media/video')
   @authenticate('session')
   async ownedVideo(
@@ -97,6 +101,12 @@ export class RunController {
     return this.response;
   }
 
+  @authorizeIam(
+    IAM_ACTION.RunCreate,
+    IAM_RESOURCE_TYPE.Workspace,
+    0,
+    'workspaceId',
+  )
   @post('/api/runs', {responses: {'202': {description: 'Run queued'}}})
   @authenticate('session')
   async create(
@@ -146,6 +156,12 @@ export class RunController {
     };
   }
 
+  @authorizeIam(
+    IAM_ACTION.RunCreate,
+    IAM_RESOURCE_TYPE.Workspace,
+    0,
+    'workspaceId',
+  )
   @post('/api/runs/agent', {
     responses: {'202': {description: 'Agent run queued'}},
   })
@@ -212,6 +228,7 @@ export class RunController {
     };
   }
 
+  @authorizeIam(IAM_ACTION.RunRead, IAM_RESOURCE_TYPE.Run)
   @get('/api/runs/{id}/result')
   @authenticate('session')
   async result(
@@ -223,6 +240,7 @@ export class RunController {
     return this.workers.getResult(id);
   }
 
+  @authorizeIam(IAM_ACTION.RunRead, IAM_RESOURCE_TYPE.Run)
   @get('/api/runs/{id}/activity')
   @authenticate('session')
   async activity(
@@ -237,6 +255,7 @@ export class RunController {
     return this.response;
   }
 
+  @authorizeIam(IAM_ACTION.RunRead, IAM_RESOURCE_TYPE.Run)
   @get('/api/runs/{id}')
   @authenticate('session')
   async get(
@@ -248,6 +267,7 @@ export class RunController {
     return this.publicRun(run);
   }
 
+  @authorizeIam(IAM_ACTION.RunRead, IAM_RESOURCE_TYPE.Run)
   @get('/api/runs/{id}/events')
   @authenticate('session')
   async events(
@@ -261,15 +281,14 @@ export class RunController {
     return this.workers.listEvents(id, after);
   }
 
+  @authorizeIam(IAM_ACTION.RunCancel, IAM_RESOURCE_TYPE.Run)
   @post('/api/runs/{id}/cancel', {
     responses: {'204': {description: 'Cancellation requested'}},
   })
   @authenticate('session')
   async cancel(
     @param.path.string('id', {schema: {format: 'uuid'}}) id: string,
-    @inject(SecurityBindings.USER) user: UserProfile,
   ): Promise<void> {
-    await this.workers.getOwned(id, user[securityId]);
     await this.workers.cancel(id);
 
     this.response.status(204);
